@@ -1,0 +1,471 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>AIFmri Documentation v0.20.0</title>
+<style>
+  body{max-width:900px;margin:40px auto;padding:0 24px;
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    color:#1a1a1a;background:#fff}
+  h1,h2,h3{line-height:1.25;margin-top:1.8em}
+  h1{border-bottom:3px solid #FF7A18;padding-bottom:.3em}
+  h2{border-bottom:1px solid #e5e5e5;padding-bottom:.25em;margin-top:2.4em}
+  img{max-width:100%;border:1px solid #ddd;border-radius:6px;margin:12px 0;
+    box-shadow:0 2px 12px rgba(0,0,0,.08)}
+  code{background:#f4f4f4;padding:2px 5px;border-radius:3px;font-size:.9em}
+  pre{background:#1a1e28;color:#e8e8e8;padding:14px 16px;border-radius:6px;overflow-x:auto}
+  pre code{background:none;color:inherit;padding:0}
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:.93em}
+  th,td{border:1px solid #ddd;padding:7px 11px;text-align:left;vertical-align:top}
+  th{background:#f7f7f7}
+  em{color:#555}
+  a{color:#C2410C}
+  blockquote{border-left:3px solid #FF7A18;margin:0;padding-left:16px;color:#555}
+</style></head><body>
+<h1 id="aifmri-functional-imaging-for-neural-networks">AIFmri — functional imaging for neural networks</h1>
+<p><strong>Version 0.20.0</strong></p>
+<p>AIFmri loads a compiled neural network — an <code>.onnx</code> file, a PyTorch <code>.pt</code>, a
+TensorFlow <code>.h5</code> — and renders it in 3D. Feed it a stimulus (an image, a
+sentence, a sound, a video, or just noise) and every layer lights up with the
+strength of its response, the way an fMRI lights up regions of a brain. From
+there you can inspect any layer's raw activations, read out what a layer is
+"disposed to say", trace causal circuits, synthesize the input a neuron most
+wants, scan the network for dead units, watch a diffusion model denoise, and
+more.</p>
+<p>It is a single-file web app: a FastAPI backend and a three.js frontend, run
+locally, one user, on <code>localhost</code>.</p>
+<p><img alt="The 3D view with a CNN's layers lit up by a noise stimulus" src="images/ui-activations.png" /></p>
+<p><em>A demo CNN, side-on, responding to a Gaussian-noise stimulus. Each slab is a
+layer; each cube is a channel, coloured by mean activation on the inferno
+colormap. The top-right counters report active layers, sparsity and peak
+activation; the plots along the bottom show the layer strip and activation by
+depth.</em></p>
+<hr />
+<h2 id="contents">Contents</h2>
+<ul>
+<li><a href="#quick-start">Quick start</a></li>
+<li><a href="#the-core-idea">The core idea</a></li>
+<li><a href="#feature-tour">Feature tour</a> — with screenshots of each</li>
+<li><a href="#the-test-suite">The test suite</a> — what it checks and why</li>
+<li><a href="#how-it-was-built">How it was built</a> — the version history, honestly</li>
+<li><a href="#api-reference">API reference</a></li>
+<li><a href="#known-limits">Known limits</a></li>
+</ul>
+<hr />
+<h2 id="quick-start">Quick start</h2>
+<ol>
+<li><strong>Extract the zip somewhere fresh</strong> (not on top of an old copy).</li>
+<li><strong>Double-click <code>START.bat</code></strong> (Windows), or run:
+   <code>bash
+   python -m uvicorn app.main:app --port 8001</code></li>
+<li>Open <strong>http://127.0.0.1:8001</strong>.</li>
+<li>Check the <strong>version badge</strong> next to the title reads the build you expect:</li>
+</ol>
+<p><img alt="The version badge in the header" src="images/version-badge.png" /></p>
+<p>This badge exists for a reason: the single most common confusion during
+   development was serving an <em>old</em> copy of the app without realising it. If
+   the badge does not say <code>v0.20.0</code>, you are running stale files.</p>
+<ol>
+<li>Click <strong>Demo CNN</strong>, set the stimulus to <strong>Gaussian noise</strong>, and press
+   <strong>Run stimulus</strong>. The network lights up.</li>
+</ol>
+<p>Nothing needs to be downloaded for the five built-in demo models. The optional
+HuggingFace gallery (real BERT, ViT, GPT-2, DDPM) needs extra packages — see
+<a href="#known-limits">Known limits</a>.</p>
+<hr />
+<h2 id="the-core-idea">The core idea</h2>
+<p>Everything in AIFmri converges on a single mechanism. Whatever you load —
+PyTorch, TensorFlow, raw ONNX — is converted to ONNX, and then <strong>every
+intermediate value in the graph is promoted to a graph output</strong>. One
+<code>onnxruntime</code> run per stimulus therefore captures the activation of every
+layer at once. Each layer becomes an <code>InstancedMesh</code> of cubes, one per channel,
+coloured by its mean absolute activation.</p>
+<p>That one design choice is what makes the rest possible: attention extraction,
+the temporal recorder, attribution, circuit tracing and the health scan are all
+built on top of "run once, read every layer".</p>
+<hr />
+<h2 id="feature-tour">Feature tour</h2>
+<h3 id="loading-and-stimulating">Loading and stimulating</h3>
+<p>Load any model and pick a stimulus modality — the app auto-detects whether an
+input wants an image, text, audio, video, a diffusion latent, or a scalar
+(a diffusion timestep). Multimodal models (CLIP-style) get one stimulus panel
+per input.</p>
+<p><img alt="The landing page with the model list and gallery" src="images/ui-landing.png" /></p>
+<h3 id="the-inspector">The inspector</h3>
+<p>Click any layer in the 3D view and the right-hand inspector opens with that
+layer's statistics, a value histogram, a channel-activity grid, a spatial map,
+the raw floats, and — where the layer has weights — a kernel viewer.</p>
+<p><img alt="The inspector open on a convolutional layer" src="images/ui-inspector.png" /></p>
+<h3 id="wiring-pyramids">Wiring: Pyramids</h3>
+<p>By default the connections between layers are drawn as sampled unit-to-unit
+lines. <strong>Pyramids</strong> mode goes volumetric instead: a fully-connected layer is
+drawn as one open, <strong>square-based pyramid</strong> per source unit — apex on the unit,
+square base opening across the whole target slab, i.e. "this unit reaches
+everything". The base is square because the target slab is square; overlapping
+pyramids, additively blended, build up density where connectivity is dense.</p>
+<p><img alt="Pyramids wiring mode on a CNN" src="images/wiring-pyramids.png" /></p>
+<p><em>The glowing volumes fan from each unit onto the next layer. This conveys an
+all-to-all connection with one primitive per unit instead of drawing k² lines,
+and the fans are tinted by their source layer's activation so they light up
+with the network.</em></p>
+<h3 id="attention">Attention</h3>
+<p>For transformers, AIFmri detects attention structurally (a softmax fed by a
+Q·Kᵀ matmul) and shows the per-head attention matrix as a heatmap plus
+token→token arcs in 3D.</p>
+<p><img alt="Attention heatmap and token arcs on a sentence" src="images/attention-arcs.png" /></p>
+<p><em>Attention for "the cat sat on the mat". The arcs connect a ring of token dots;
+the heatmap in the inspector is the raw attention matrix. Each query token's
+strongest keys are drawn — see the <a href="#v020--the-bugs-a-real-browser-found">v0.20 note</a>
+for why this had to be relative rather than an absolute threshold.</em></p>
+<h3 id="temporal-recording-the-bold-carpet">Temporal recording — the BOLD carpet</h3>
+<p>Record activations over a <em>sequence</em> of stimuli — a sentence revealed token by
+token, a video frame by frame, a noise walk — and scrub through it like a BOLD
+sequence. The result is a carpet plot: layers on one axis, time on the other.</p>
+<p><img alt="The BOLD carpet recording a sentence token by token" src="images/temporal-carpet.png" /></p>
+<h3 id="attribution-activation-maximization">Attribution — activation maximization</h3>
+<p>Synthesize the input a chosen unit most wants to see, by gradient-free
+evolutionary search over input space. The synthesized input is then run back
+through the model, so the whole 3D view and inspector repaint to show what the
+network does with it.</p>
+<p><img alt="Activation maximization synthesizing an input for a neuron" src="images/attribution-maximize.png" /></p>
+<p><em>The optimization trace (bottom of the inspector) shows the unit's response
+climbing as the search proceeds. On the demo CNN this reliably reaches ~16×
+the starting activation.</em></p>
+<p>Alongside maximization, the attribution tools include <strong>occlusion saliency</strong>
+(which input regions/tokens matter to a unit) and <strong>stimulus ranking</strong> (which
+recorded frame or noise sample fires a unit hardest).</p>
+<h3 id="network-health-scan">Network health scan</h3>
+<p>Probe the model with a batch of varied stimuli and get a report of <strong>dead</strong>,
+<strong>weak</strong>, <strong>constant</strong> and <strong>duplicate</strong> units, a dead-percentage profile by
+depth, and clickable problem layers.</p>
+<p><img alt="The network health scan report" src="images/health-scan.png" /></p>
+<p><em>Duplicate detection compares activation </em><em>patterns</em><em>, not magnitudes — an
+early magnitude-based version reported 54 duplicate pairs in a layer that had
+exactly one, because channels with similar average energy look identical by
+that measure.</em></p>
+<h3 id="diffusion-mode">Diffusion mode</h3>
+<p>A denoising UNet's sequence axis is <strong>noise level</strong>, which is exactly what the
+temporal carpet was built for. Load a diffusion model, choose <strong>Denoising
+loop</strong>, and AIFmri runs a real DDIM loop from pure noise to a finished image,
+recording every layer at every noise level.</p>
+<p><img alt="A real DDPM denoising pure noise into an image, step by step" src="images/diffusion-denoising.png" /></p>
+<p><em>The denoising trajectory of a real trained DDPM-CIFAR10, left (pure noise,
+t=999) to right (finished image, t=0). Neighbour-correlation goes from −0.016
+to +0.92 — from static to a photograph.</em></p>
+<h3 id="also-included">Also included</h3>
+<ul>
+<li><strong>Jacobian lens</strong> — reads what a layer is "disposed to say" by transporting
+  it through the model's own output head (an ONNX finite-difference adaptation
+  of Anthropic's jacobian-lens).</li>
+<li><strong>Circuit tracing</strong> — perturb a source unit and measure the effect on a
+  deeper target (boost→trace), or ablate a layer and measure the change at the
+  output (ablate→output).</li>
+<li><strong>Model diff</strong> — run the same stimulus through two models and compare
+  per-layer divergence; localises exactly where two models differ.</li>
+<li><strong>Weight viewer</strong> — kernel contact sheets, weight histograms, per-filter
+  norms.</li>
+<li><strong>Latency lens</strong> — real per-node ONNX Runtime profiling, honest about
+  operator fusion.</li>
+<li><strong>Session export</strong> — a self-contained HTML report with every image inlined.</li>
+</ul>
+<hr />
+<h2 id="the-test-suite">The test suite</h2>
+<p>AIFmri has <strong>114 automated tests that run in about 6 seconds</strong>, plus two opt-in
+suites for things that are slow or need a real browser.</p>
+<pre><code>$ pytest
+..........................................................................
+..........................................
+114 passed, 22 deselected in 5.78s
+</code></pre>
+<pre><code>$ pytest -m ui          # real-browser reachability (needs playwright + chromium)
+$ pytest -m slow        # real HuggingFace models (downloads, needs RAM)
+</code></pre>
+<h3 id="what-each-module-checks">What each module checks</h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th style="text-align: right;">Tests</th>
+<th>What it pins down</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_smoke.py</code></td>
+<td style="text-align: right;">14</td>
+<td>every sample loads and runs; every endpoint answers; modality detection</td>
+</tr>
+<tr>
+<td><code>test_attribution.py</code></td>
+<td style="text-align: right;">18</td>
+<td>occlusion peaks on a known target; <strong>the matched-filter cross-validation</strong> (below)</td>
+</tr>
+<tr>
+<td><code>test_diffusion.py</code></td>
+<td style="text-align: right;">13</td>
+<td>rank-0 timestep loads; latent sizing; the three beta schedules differ; DDIM stays bounded</td>
+</tr>
+<tr>
+<td><code>test_weights_latency_export.py</code></td>
+<td style="text-align: right;">11</td>
+<td>weight stats are finite and sane; latency is fusion-honest; export is self-contained</td>
+</tr>
+<tr>
+<td><code>test_health.py</code></td>
+<td style="text-align: right;">10</td>
+<td>a <strong>sabotaged model</strong> with planted dead/duplicate units is diagnosed exactly</td>
+</tr>
+<tr>
+<td><code>test_attention.py</code></td>
+<td style="text-align: right;">9</td>
+<td>attention detected on transformers, <strong>not</strong> on a CLIP similarity matmul; rows sum to 1</td>
+</tr>
+<tr>
+<td><code>test_jlens.py</code></td>
+<td style="text-align: right;">8</td>
+<td>the lens reads out the model's real prediction; refuses without a decodable head</td>
+</tr>
+<tr>
+<td><code>test_robustness.py</code></td>
+<td style="text-align: right;">7</td>
+<td><strong>zero-size intermediates</strong> (the causal-LM bug) reproduced synthetically; LRU eviction</td>
+</tr>
+<tr>
+<td><code>test_diff.py</code></td>
+<td style="text-align: right;">7</td>
+<td>a classifier-head change reads 0.000 upstream and spikes at the Gemm</td>
+</tr>
+<tr>
+<td><code>test_frontend.py</code></td>
+<td style="text-align: right;">7</td>
+<td><code>node --check</code> on the module script; every <code>$('id')</code> exists in the DOM</td>
+</tr>
+<tr>
+<td><code>test_circuit.py</code></td>
+<td style="text-align: right;">5</td>
+<td>boosting a source moves the target; ablating hurts less per-channel than whole-layer</td>
+</tr>
+<tr>
+<td><code>test_temporal.py</code></td>
+<td style="text-align: right;">5</td>
+<td>recording reveals tokens progressively; the noise walk stays smooth</td>
+</tr>
+<tr>
+<td><code>test_ui_layout.py</code></td>
+<td style="text-align: right;">14</td>
+<td><strong>real-browser reachability</strong> at 1280/1366/1500/1920 (opt-in, <code>-m ui</code>)</td>
+</tr>
+<tr>
+<td><code>test_gallery_slow.py</code></td>
+<td style="text-align: right;">8</td>
+<td>real BERT/ViT/DDPM; DistilGPT-2 attention is strictly causal (opt-in, <code>-m slow</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="these-are-not-smoke-tests">These are not smoke tests</h3>
+<p>The suite encodes the specific invariants that caught real bugs. Two examples
+worth calling out:</p>
+<p><strong>The matched-filter cross-validation.</strong> The activation maximizer is an
+evolutionary search that never sees the model's weights; the weight viewer
+reads them straight off disk. Matched-filter theory says the input that
+maximally excites a first-layer conv filter <em>is</em> that filter's own pattern — so
+the two features, which share no code, must independently agree. They do, on all
+five tested channels. The test also pins <em>how</em> to measure it: a naive
+average-patch score reports a false failure, because the <code>mean|activation|</code>
+objective lets the optimum flip sign position-to-position and averaging cancels
+exactly the pattern you are looking for.</p>
+<p><strong>The sabotaged-model health scan.</strong> <code>test_health.py</code> builds a model with three
+conv channels forced dead (huge negative bias) and two filters made
+byte-identical, then asserts the scan finds <em>exactly</em> three dead units and
+<em>exactly</em> one duplicate pair, correctly named. This is what pins the
+pattern-not-magnitude duplicate detection in place.</p>
+<hr />
+<h2 id="how-it-was-built">How it was built</h2>
+<p>AIFmri was built iteratively across roughly twenty versions. The honest
+version history is useful because several features exist <em>because</em> an earlier
+assumption turned out to be wrong.</p>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Added</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.1–0.5</td>
+<td>3D graph, stimulus modes, inspector, sweep animation, dynamic shape resolution, layouts, architecture view</td>
+</tr>
+<tr>
+<td>0.3–0.4</td>
+<td>Multimodality: auto-detect image/text/audio/video, per-input panels, contrast mode</td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>Temporal fMRI — record sequences, BOLD carpet, scrub transport</td>
+</tr>
+<tr>
+<td>0.7</td>
+<td>Attention flow — per-head heatmaps, token arcs, fused-attention fallback</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>CLIP-normalize presets, one-click HuggingFace gallery</td>
+</tr>
+<tr>
+<td>0.9</td>
+<td>Layer stimulus viewer, Jacobian lens</td>
+</tr>
+<tr>
+<td>0.10</td>
+<td>Attribution — occlusion saliency, stimulus ranking</td>
+</tr>
+<tr>
+<td>0.12</td>
+<td>Model diffing</td>
+</tr>
+<tr>
+<td>0.13</td>
+<td>Wiring view — line bundles by op type</td>
+</tr>
+<tr>
+<td>0.14</td>
+<td>Pyramids (originally "Cones") — volumetric wiring</td>
+</tr>
+<tr>
+<td>0.15</td>
+<td>Activation maximization</td>
+</tr>
+<tr>
+<td>0.16</td>
+<td>Network health scan</td>
+</tr>
+<tr>
+<td>0.17</td>
+<td>Weight viewer, latency lens, session export, causal-LM fix</td>
+</tr>
+<tr>
+<td>0.18</td>
+<td><strong>The test suite</strong> — and the three bugs it immediately found</td>
+</tr>
+<tr>
+<td>0.19</td>
+<td>Diffusion mode</td>
+</tr>
+<tr>
+<td>0.19.1–0.19.3</td>
+<td>Deployment fixes: version badge, self-locating launcher, gallery error UX</td>
+</tr>
+<tr>
+<td>0.19.2</td>
+<td>"Cones" renamed to Pyramids, square base aligned to the slab</td>
+</tr>
+<tr>
+<td>0.20</td>
+<td><strong>Six bugs a real browser found that 114 tests missed</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="v017-the-causal-lm-fix">v0.17 — the causal-LM fix</h3>
+<p>DistilGPT-2 would not load. The first diagnosis — a KV-cache problem — was
+<strong>wrong</strong>. The real cause was that causal-LM exports legitimately produce
+<em>empty</em> intermediate tensors, and the activation-stats code called numpy
+reductions on them, which throws. A one-line guard skipping zero-size arrays
+fixed it. DistilGPT-2 now loads all 1366 layers, and its attention comes out
+strictly lower-triangular (upper-triangle mass exactly 0.000000) — the causal
+mask emerging from the data, with nothing in the code assuming it.</p>
+<h3 id="v018-the-test-suite-found-three-real-bugs-on-its-first-run">v0.18 — the test suite found three real bugs on its first run</h3>
+<p>Writing the tests immediately surfaced: a <code>/jlens/stack</code> endpoint that silently
+ignored a parameter the frontend was already sending; a model registry that
+<strong>never evicted anything</strong>, so loading a few large models would exhaust memory;
+and a health scan that held per-unit signatures for every node at once. All
+three were fixed, with regression tests. (A day later, the eviction fix itself
+was found to break model-diffing — it evicted the model you wanted to compare
+against — and was fixed to always spare the two most-recent models.)</p>
+<h3 id="v020-the-bugs-a-real-browser-found">v0.20 — the bugs a real browser found</h3>
+<p>A browser agent drove the actual UI for ten minutes and found six issues that
+all 114 automated tests had passed. The instructive part is <em>why</em> they were
+missed.</p>
+<ul>
+<li><strong>Whole control groups were unclickable.</strong> The floating bars were centred on
+  the <em>window</em>, so at ≤1500px — a laptop screen — the LAYOUT group and the
+  carpet's play button slid under the 312px-wide left rail, which sat on top and
+  swallowed the clicks. Two earlier fixes colliding. The bars now centre on the
+  gap between the rails.</li>
+<li><strong>Stale readouts after switching models</strong> — the HUD update early-returned
+  when there was no activation, leaving the previous model's counters on screen.</li>
+<li><strong>Attention arcs never rendered on a real sentence</strong> — the arc cutoff was
+  absolute (<code>weight &gt; 0.08</code>), but attention rows are a softmax summing to 1, so
+  at 22 tokens the mean weight is 0.045 and <em>no</em> arcs were drawn. It only worked
+  under ~12 tokens, which is exactly the length every test used.</li>
+<li><strong>Camera zoom could lock up</strong> and <strong>camera presets never fully arrived</strong>.</li>
+</ul>
+<p><strong>Why 114 tests missed all of it:</strong> the automated tests clicked with
+<code>force=True</code>, which tells Playwright to skip its overlap check — a real mouse
+cannot force-click — and they ran at 1600px+, where the layout bug does not
+occur. Two blind spots stacked.</p>
+<p>The lesson is now permanent as <code>pytest -m ui</code> (<code>test_ui_layout.py</code>), which
+drives a real browser at multiple laptop widths, <strong>never</strong> uses force, and
+asserts reachability with <code>document.elementFromPoint</code> — "is this control the
+element the mouse would actually hit?"</p>
+<p><img alt="The view bar clear of the left rail at 1366px" src="images/layout-1366.png" /></p>
+<p><em>At 1366px the full view bar (LAYOUT · CAMERA · WIRING · Architecture) sits
+entirely in the gap to the right of the left rail — the layout the UI tests now
+guard at every laptop width.</em></p>
+<hr />
+<h2 id="api-reference">API reference</h2>
+<p>The frontend talks to a small REST API. The main endpoints:</p>
+<p><strong>Loading</strong>
+- <code>POST /api/models</code> — upload a model file
+- <code>POST /api/samples/{name}</code> — load a built-in demo
+- <code>POST /api/hf/{name}</code> — load a HuggingFace gallery model
+- <code>GET /api/samples</code>, <code>GET /api/hf</code>, <code>GET /api/models</code> — list
+- <code>GET /api/version</code> — the running build number</p>
+<p><strong>Stimulating and reading</strong>
+- <code>POST /api/models/{id}/run</code> — run one stimulus
+- <code>POST /api/models/{id}/run_multi</code> — multimodal stimulus
+- <code>GET /api/models/{id}/stats?node=</code> — one layer's statistics
+- <code>GET /api/models/{id}/raw?node=</code> — raw floats
+- <code>GET /api/models/{id}/spatial?node=</code> — spatial activation map
+- <code>POST /api/models/{id}/tokenizer</code>, <code>POST /api/models/{id}/labels</code></p>
+<p><strong>Temporal</strong>
+- <code>POST /api/models/{id}/record</code> — record a sequence (modes include <code>denoise</code>)
+- <code>POST /api/models/{id}/record/seek</code> — re-run one frame at full fidelity</p>
+<p><strong>Analysis</strong>
+- <code>GET /api/models/{id}/attention?node=</code>
+- <code>GET /api/models/{id}/jlens?node=</code> and <code>/jlens/stack</code>
+- <code>GET /api/models/{id}/attribution/occlusion|rank_frames|rank_noise</code>
+- <code>POST /api/models/{id}/attribution/maximize</code>
+- <code>GET /api/models/{id}/circuit/targets|trace|ablate</code>
+- <code>GET /api/diff?model_a=&amp;model_b=</code>
+- <code>GET /api/models/{id}/health</code>
+- <code>GET /api/models/{id}/weights</code> and <code>/weights/image</code>
+- <code>GET /api/models/{id}/latency</code>
+- <code>POST /api/models/{id}/export</code></p>
+<hr />
+<h2 id="known-limits">Known limits</h2>
+<p>These are deliberate, not bugs:</p>
+<ul>
+<li><strong>The HuggingFace gallery needs extra packages.</strong> Without them the gallery
+  buttons are disabled and a banner shows the exact <code>pip install</code> command. The
+  demo samples need none of it.
+  <code>pip install transformers optimum optimum-onnx onnxscript
+  # and for the DDPM diffusion entry:
+  pip install diffusers</code></li>
+</ul>
+<p><img alt="The model gallery in the left rail" src="images/gallery-rail.png" />
+- <strong>The Jacobian lens and circuit tracer are RAM-bound.</strong> They rebuild a
+  forward subgraph in memory, costing ~5× the model size (measured). On a model
+  too large for available RAM they refuse cleanly rather than crash. Everything
+  else works at any size.
+- <strong>Fused/Flash attention can't yield a Q·Kᵀ matrix</strong> — the kernel never
+  materialises it. AIFmri flags this and falls back to per-token output energy.
+- <strong>Text maximization is weaker than image maximization</strong> (~2× vs ~16×);
+  discrete search over tokens is genuinely harder than continuous search over
+  pixels.
+- <strong>Full Stable Diffusion is a pipeline</strong> (text encoder → UNet → VAE) and
+  AIFmri loads one graph at a time. You can inspect the UNet — where the
+  interesting computation is — but there is no text prompt and no VAE decode.
+- <strong>A model with external weights</strong> (<code>model.onnx.data</code> beside the <code>.onnx</code>) must
+  be loaded from disk, not uploaded through the browser.</p>
+<hr />
+<p><em>Generated for AIFmri v0.20.0. All UI screenshots are of the current build;
+the version badge visible in several of them reads v0.20.0.</em></p>
+</body></html>

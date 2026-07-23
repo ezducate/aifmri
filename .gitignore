@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+models/
+hf_cache/
+*.exposed.onnx
+.venv/
