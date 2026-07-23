@@ -1,0 +1,2534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIFmri — functional imaging for neural networks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#04060B; --panel:#0B111CF2; --line:#1A2436;
+    --text:#DCE6F5; --muted:#6E82A3; --hot:#FFB020; --err:#FF6B57; --ok:#5BD6A0;
+    --mono:"IBM Plex Mono",monospace; --ui:"Space Grotesk",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--ui)}
+  #scene{position:fixed;inset:0}
+  /* The floating bars must be centred on the GAP BETWEEN the rails, not on the
+     window. Centring them on the window put the LAYOUT group and the carpet's
+     play button underneath the left rail — and since the rails sit at z-12
+     (raised so the analytics bar would stop eating the inspector's buttons),
+     the rail swallowed the clicks. The features still worked; you just could
+     not reach them. --rail-r flips to the inspector's width while it is open. */
+  :root{ --rail-l:312px; --rail-r:0px; }
+  .rail{position:fixed;top:0;bottom:0;width:var(--rail-l);background:var(--panel);
+        border-right:1px solid var(--line);backdrop-filter:blur(6px);
+        padding:16px;overflow-y:auto;z-index:12;padding-bottom:150px}
+  #inspector{left:auto;right:0;border-right:none;border-left:1px solid var(--line);
+             transform:translateX(100%);transition:transform .25s ease;width:340px}
+  body.insp{ --rail-r:340px; }
+  #inspector.open{transform:none}
+  h1{font-size:15px;letter-spacing:.22em;font-weight:700}
+  h1 span{color:var(--hot)}
+  .sub{font-size:10px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin:2px 0 14px}
+  details{border-bottom:1px solid var(--line);padding:4px 0 10px;margin-bottom:4px}
+  summary{font-size:10px;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;
+          padding:7px 0;cursor:pointer;list-style:none;user-select:none}
+  summary::before{content:"▸ ";color:var(--hot)}
+  details[open] summary::before{content:"▾ "}
+  .sec{font-size:10px;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;
+       border-bottom:1px solid var(--line);padding-bottom:5px;margin:18px 0 10px}
+  label{font-size:11px;color:var(--muted);display:block;margin:8px 0 3px}
+  input[type=file]{width:100%;font-size:11px;font-family:var(--mono);color:var(--muted)}
+  input[type=text],select,textarea{width:100%;background:#060B14;border:1px solid var(--line);
+    color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 8px;border-radius:3px}
+  textarea{resize:vertical;min-height:56px}
+  input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--hot);outline-offset:1px}
+  button{background:#101A2B;border:1px solid var(--line);color:var(--text);
+    font-family:var(--ui);font-size:12px;letter-spacing:.06em;padding:8px 12px;
+    border-radius:3px;cursor:pointer;width:100%;margin-top:10px}
+  button:hover{border-color:var(--hot);color:var(--hot)}
+  button.primary{background:var(--hot);border-color:var(--hot);color:#100A00;font-weight:700}
+  button.primary:hover{filter:brightness(1.1);color:#100A00}
+  button.mini{width:auto;padding:4px 9px;font-size:11px;margin:4px 4px 0 0}
+  button:disabled{opacity:.4;cursor:default}
+  button.busy{color:transparent;position:relative}
+  button.busy::after{content:"";position:absolute;inset:0;margin:auto;width:13px;height:13px;
+    border:2px solid var(--muted);border-top-color:var(--hot);border-radius:50%;
+    animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  #status{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:12px;
+          white-space:pre-wrap;min-height:26px;line-height:1.5}
+  #status.err{color:var(--err)} #status.ok{color:var(--ok)}
+  kv{display:grid;grid-template-columns:1fr auto;gap:2px 12px;font-family:var(--mono);font-size:11px}
+  kv b{color:var(--muted);font-weight:400} kv i{font-style:normal;text-align:right}
+  .inrow{display:grid;grid-template-columns:1fr 108px;gap:6px;align-items:center;margin-top:6px;
+         font-family:var(--mono);font-size:11px}
+  .inrow .nm{color:var(--muted);word-break:break-all}
+  .inrow .nm em{color:var(--hot);font-style:normal}
+  .probe{font-family:var(--mono);font-size:11px;margin-top:6px}
+  .probe.ok{color:var(--ok)} .probe.bad{color:var(--err)}
+  #samples button{text-align:left}
+  #samples small,#hfgallery small{display:block;color:var(--muted);font-family:var(--mono);font-size:10px;margin-top:2px}
+  #hfgallery button{text-align:left}
+  #layerlist{max-height:230px;overflow-y:auto;margin-top:8px;font-family:var(--mono);font-size:11px}
+  #layerlist div{padding:4px 6px;border-radius:3px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+  #layerlist div:hover{background:#101A2B}
+  #layerlist div.sel{background:#1B2436;color:var(--hot)}
+  #layerlist .op{color:var(--muted)}
+  #tokens{display:flex;flex-wrap:wrap;gap:3px;margin-top:8px}
+  #tokens span{font-family:var(--mono);font-size:10px;background:#101A2B;border:1px solid var(--line);
+    padding:1px 5px;border-radius:3px;color:var(--muted)}
+  #recover{display:none;border:1px solid var(--hot);border-radius:4px;padding:10px;margin-top:10px}
+  #recover .cand{display:flex;justify-content:space-between;gap:6px}
+  #legend{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
+    background:var(--panel);border:1px solid var(--line);border-radius:4px;
+    padding:8px 14px;z-index:5;display:none;align-items:center;gap:10px}
+  #legendbar{width:220px;height:10px;border-radius:2px}
+  #legend span{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  #tooltip{position:fixed;pointer-events:none;z-index:9;background:var(--panel);
+    border:1px solid var(--line);border-radius:3px;padding:5px 9px;
+    font-family:var(--mono);font-size:11px;display:none}
+  #tooltip b{color:var(--hot)}
+  #empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    z-index:2;pointer-events:none;flex-direction:column;gap:8px}
+  #empty h2{font-family:var(--ui);font-weight:500;font-size:20px;color:var(--muted);letter-spacing:.04em}
+  #empty p{font-family:var(--mono);font-size:12px;color:#3D4E6B}
+  #dropglow{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+    background:#04060BD9;border:2px dashed var(--hot);font-family:var(--ui);font-size:20px;color:var(--hot)}
+  canvas.heat{width:100%;image-rendering:pixelated;border:1px solid var(--line);border-radius:3px;background:#000}
+  #rawbox{font-family:var(--mono);font-size:10px;line-height:1.7;max-height:170px;
+    overflow:auto;background:#060B14;border:1px solid var(--line);border-radius:3px;
+    padding:8px;white-space:pre;color:#9FB4D6}
+  #decoded{width:100%;border:1px solid var(--line);border-radius:3px;display:none}
+  .topk{font-family:var(--mono);font-size:11px}
+  .topk div{display:flex;justify-content:space-between;padding:2px 0}
+  .bar{height:3px;background:var(--hot);border-radius:2px;margin-bottom:5px}
+  .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;cursor:pointer}
+  .check input{width:auto}
+  .card{border:1px solid var(--line);border-radius:4px;padding:10px;margin-top:10px;background:#080E19}
+  .card .hd{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:11px;word-break:break-all}
+  .card .hd b{color:var(--hot);font-weight:500}
+  .card select{margin-top:6px}
+  @media (prefers-reduced-motion: reduce){ #inspector{transition:none} }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+<div id="empty">
+  <h2>Drop a model anywhere</h2>
+  <p>.onnx · .pt · .pth · .h5 · .keras — then stimulate it with images, text, audio, or video</p>
+</div>
+<div id="dropglow">Release to load</div>
+
+<div class="rail" id="controls">
+  <h1>AI<span>F</span>MRI <span id="ver" title="build actually being served"
+      style="font-size:10px;font-family:var(--mono);color:var(--muted);
+             font-weight:400;letter-spacing:0">…</span></h1>
+  <div class="sub">functional imaging for neural networks</div>
+
+  <details open>
+    <summary>Subject · model</summary>
+    <div id="samples"></div>
+    <div class="sec" style="margin-top:14px">HuggingFace gallery
+      <span style="color:var(--muted);font-weight:400">— real architectures</span></div>
+    <div id="hfgallery" style="font-family:var(--mono);font-size:11px;color:var(--muted)">loading…</div>
+    <label for="mfile" style="margin-top:14px">Or choose a file</label>
+    <input type="file" id="mfile">
+    <button class="primary" id="loadbtn">Load model</button>
+    <div id="recover">
+      <div style="font-size:12px" id="recovermsg"></div>
+      <div id="candbox"></div>
+      <label for="archcode">…or paste the model class code
+        (define <b style="color:var(--hot)">model = …</b> or <b style="color:var(--hot)">def build():</b>)</label>
+      <textarea id="archcode" placeholder="import torch.nn as nn&#10;model = nn.Sequential(...)"></textarea>
+      <label for="recshape">Input shape</label>
+      <input type="text" id="recshape" value="[1, 3, 224, 224]">
+      <button id="recoverbtn">Rebuild &amp; load</button>
+    </div>
+  </details>
+
+  <details id="inputsec" style="display:none" open>
+    <summary>Inputs · shapes</summary>
+    <div id="inrows"></div>
+    <div class="probe" id="probemsg"></div>
+    <button class="mini" id="applyshapes">Apply shapes</button>
+  </details>
+
+  <details id="stimsec" style="display:none" open>
+    <summary>Stimulus</summary>
+    <div id="multistim" style="display:none"></div>
+    <div id="singlestim">
+    <label for="mode">Source</label>
+    <select id="mode">
+      <option value="noise">Gaussian noise</option>
+      <option value="image">Image</option>
+      <option value="text">Text</option>
+      <option value="audio">Audio</option>
+      <option value="video">Video</option>
+      <option value="zeros">Zeros (baseline)</option>
+    </select>
+    <div id="imgrow" style="display:none">
+      <label for="imgfile">Image (or drop one on the canvas)</label>
+      <input type="file" id="imgfile" accept="image/*">
+      <button class="mini" id="camsnap">📷 Webcam snap</button>
+      <label for="norm">Normalization</label>
+      <select id="norm">
+        <option value="unit">0…1</option>
+        <option value="imagenet">ImageNet mean/std</option>
+        <option value="clip">CLIP / OpenAI mean/std</option>
+        <option value="inception">Inception / signed (−1…1)</option>
+        <option value="signed">−1…1</option>
+      </select>
+    </div>
+    <div id="audiorow" style="display:none">
+      <label for="audiofile">Audio file (wav / flac / ogg / mp3)</label>
+      <input type="file" id="audiofile" accept="audio/*">
+      <div class="row">
+        <button class="mini" id="micbtn" style="flex:2">🎙 Record 4 s</button>
+        <input type="text" id="srate" value="16000" title="sample rate" style="flex:1">
+      </div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px">
+        Fitted automatically: raw waveform or log-mel, from the input shape.</div>
+    </div>
+    <div id="videorow" style="display:none">
+      <label for="videofile">Video clip (mp4 / mov / webm)</label>
+      <input type="file" id="videofile" accept="video/*">
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px">
+        Frames are sampled evenly to fit the model's time axis.</div>
+    </div>
+    <div id="textrow" style="display:none">
+      <label for="stimtext">Text stimulus</label>
+      <textarea id="stimtext" placeholder="the quick brown fox…"></textarea>
+      <label for="tokkind">Tokenizer</label>
+      <select id="tokkind">
+        <option value="byte">Byte-level (built-in, any model)</option>
+        <option value="hf">Upload tokenizer.json (HF format)</option>
+      </select>
+      <input type="file" id="tokfile" accept=".json" style="display:none;margin-top:6px">
+      <div id="tokens"></div>
+    </div>
+    </div><!-- /singlestim -->
+    <button class="primary" id="runbtn">Run stimulus</button>
+    <div class="row">
+      <button id="sweepbtn">Sweep wave</button>
+      <button id="basebtn" title="Store this run as the baseline for contrast">Hold baseline</button>
+    </div>
+    <label class="check"><input type="checkbox" id="contrast" disabled>
+      Contrast vs baseline <span style="color:var(--muted)">(A − B)</span></label>
+    <div class="sec">Temporal · record a sequence</div>
+    <label for="recmode">Sequence source</label>
+    <select id="recmode"></select>
+    <div id="schedrow" style="display:none;margin-top:6px">
+      <label for="sched">Noise schedule
+        <span style="color:var(--muted)">— not stored in the ONNX; pick the one the model trained with</span></label>
+      <select id="sched">
+        <option value="scaled_linear">scaled_linear — Stable Diffusion</option>
+        <option value="linear">linear — DDPM / DDIM</option>
+        <option value="cosine">cosine — improved DDPM</option>
+      </select>
+    </div>
+    <input type="file" id="recfile" style="margin-top:6px;display:none">
+    <textarea id="rectext" placeholder="sentence to reveal token by token…"
+      style="margin-top:6px;display:none"></textarea>
+    <div class="row">
+      <div><label for="recframes">Frames</label>
+        <input type="text" id="recframes" value="48"></div>
+      <button id="recbtn" style="align-self:flex-end">⏺ Record</button>
+    </div>
+  </details>
+
+  <details id="layersec" style="display:none" open>
+    <summary>Layers</summary>
+    <input type="text" id="layerfilter" placeholder="filter — conv, softmax, attn…">
+    <div id="layerlist"></div>
+  </details>
+
+  <details id="decodesec" style="display:none">
+    <summary>Decode extras</summary>
+    <label for="lfile">Class labels / vocab (JSON array)</label>
+    <input type="file" id="lfile" accept=".json">
+    <button class="mini" id="lblbtn">Attach labels</button>
+  </details>
+
+  <details id="expsec" style="display:none">
+    <summary>Export session</summary>
+    <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+      a self-contained HTML report — stimulus, activation profile and findings,
+      images inlined. Opens anywhere, no server.</div>
+    <textarea id="expnotes" placeholder="notes to include in the report…"></textarea>
+    <label class="check"><input type="checkbox" id="exphealth"> include health scan</label>
+    <label class="check"><input type="checkbox" id="explat"> include latency profile</label>
+    <button id="expbtn" style="margin-top:6px">Download report</button>
+  </details>
+
+  <details id="latsec" style="display:none">
+    <summary>Latency lens</summary>
+    <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+      real per-node timings from ONNX Runtime's profiler · paints the 3-D view
+      by time instead of activation</div>
+    <div class="row">
+      <button id="latbtn" style="margin-top:0">Profile</button>
+      <button id="latoff" style="margin-top:0">Back to activation</button>
+    </div>
+    <div id="latout" style="margin-top:8px"></div>
+    <div id="latrows" style="margin-top:6px"></div>
+  </details>
+
+  <details id="healthsec" style="display:none">
+    <summary>Network health</summary>
+    <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+      probes the model with varied stimuli and reports units that never fire,
+      never vary, or duplicate each other — i.e. wasted capacity</div>
+    <div class="row">
+      <div><label for="hn">Probes</label><input type="text" id="hn" value="24"></div>
+      <button id="hbtn" style="align-self:flex-end">Scan</button>
+    </div>
+    <div id="hout" style="margin-top:8px"></div>
+    <canvas id="hcanvas" width="300" height="54"
+      style="display:none;width:100%;border:1px solid #101828;border-radius:3px;background:#04070E;margin-top:8px"></canvas>
+    <div id="hrows" style="margin-top:6px"></div>
+  </details>
+
+  <details id="diffsec" style="display:none">
+    <summary>Model diff</summary>
+    <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+      run a stimulus here first · then compare this model (A) against another loaded model (B) on the same input</div>
+    <label for="diffb">Compare against (B)</label>
+    <select id="diffb"><option value="">— another loaded model —</option></select>
+    <button class="mini" id="diffbtn" style="margin-top:6px">Diff A → B</button>
+    <div id="diffout" style="margin-top:8px"></div>
+    <canvas id="diffcanvas" width="300" height="70"
+      style="display:none;width:100%;border:1px solid #101828;border-radius:3px;background:#04070E;margin-top:8px"></canvas>
+  </details>
+
+  <div id="status">Load a model to begin — or just drop one on the page.</div>
+</div>
+
+<div class="rail" id="inspector">
+  <h1 id="iname" style="font-size:13px;word-break:break-all">—</h1>
+  <div class="sub" id="iop">—</div>
+  <div class="sec">Signal statistics</div>
+  <kv id="istats"></kv>
+  <div class="sec">Distribution</div>
+  <canvas id="histo" width="300" height="70" style="width:100%;border:1px solid #101828;border-radius:3px;background:#04070E"></canvas>
+  <div class="sec">Channel activity <span style="color:var(--muted);font-weight:400">— mean |x| per channel</span></div>
+  <canvas id="chgrid" width="300" height="44" style="width:100%;border:1px solid #101828;border-radius:3px;background:#04070E"></canvas>
+  <div class="sec">Spatial map</div>
+  <label for="chsel">Channel / axis slice</label>
+  <select id="chsel"><option value="">mean over channels</option></select>
+  <canvas class="heat" id="heat" width="64" height="64"></canvas>
+  <div class="sec">Raw floats</div>
+  <div class="row">
+    <input type="text" id="rawoff" placeholder="offset" value="0">
+    <button id="rawbtn" style="margin-top:0">Read</button>
+  </div>
+  <div id="rawbox" style="margin-top:8px">—</div>
+  <div class="sec">Latent translation</div>
+  <button id="imgdec">Render tensor as image</button>
+  <img id="decoded" alt="decoded latent">
+  <button id="topkdec">Decode logits → top-k</button>
+  <div class="topk" id="topk"></div>
+  <div id="attnsec" style="display:none">
+    <div class="sec">Attention <span style="color:var(--muted);font-weight:400">— query ↓ × key →</span></div>
+    <label for="headsel">Head</label>
+    <select id="headsel"></select>
+    <canvas class="heat" id="attnheat" width="64" height="64"></canvas>
+    <div id="attntoks" style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:5px;word-break:break-all"></div>
+    <label class="check" style="margin-top:8px"><input type="checkbox" id="arcstoggle" checked>
+      Show token→token arcs in 3D</label>
+  </div>
+  <div class="sec">Stimulus that produced this <span style="color:var(--muted);font-weight:400">— the input the model saw</span></div>
+  <div id="stimview" style="font-family:var(--mono);font-size:11px;color:var(--muted)">run a stimulus to view it here</div>
+  <div class="sec">Jacobian lens <span style="color:var(--muted);font-weight:400">— what this layer is disposed to say</span></div>
+  <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+    reads the layer's activation out through the model's own head
+    <a href="https://github.com/anthropics/jacobian-lens" target="_blank" style="color:var(--accent)">(J-lens method)</a></div>
+  <div class="row">
+    <button id="jlensbtn" style="margin-top:0">Read this layer</button>
+    <button id="jlensstackbtn" style="margin-top:0">Scan all layers</button>
+  </div>
+  <div id="jlensout" class="topk" style="margin-top:8px"></div>
+  <div id="jlensstack" style="margin-top:8px"></div>
+
+  <div class="sec">Weights <span style="color:var(--muted);font-weight:400">— what this layer knows</span></div>
+  <div id="wout" style="font-family:var(--mono);font-size:10px;color:var(--muted)">—</div>
+  <img id="wimg" style="display:none;width:100%;image-rendering:pixelated;border:1px solid var(--line);border-radius:3px;margin-top:6px">
+  <canvas id="whist" width="240" height="46" style="display:none;width:100%;border:1px solid #101828;border-radius:3px;background:#04070E;margin-top:6px"></canvas>
+
+  <div class="sec">Neuron attribution <span style="color:var(--muted);font-weight:400">— what makes this fire?</span></div>
+  <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+    uses the channel selected above · occlusion perturbs the input & measures the drop</div>
+  <div class="row">
+    <button id="attrocc" style="margin-top:0">Occlusion map</button>
+    <button id="attrrank" style="margin-top:0">Rank stimuli</button>
+  </div>
+  <button id="attrmax" style="margin-top:6px">✦ Maximize — synthesize what this unit wants</button>
+  <canvas id="attrtrace" width="300" height="52"
+    style="display:none;width:100%;border:1px solid #101828;border-radius:3px;background:#04070E;margin-top:8px"></canvas>
+  <div id="attrmaxout" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px"></div>
+  <canvas id="attrheat" width="140" height="140"
+     style="display:none;width:100%;image-rendering:pixelated;border:1px solid var(--line);border-radius:3px;margin-top:8px"></canvas>
+  <div id="attrtoks" style="display:none;font-family:var(--mono);font-size:10px;margin-top:8px;line-height:1.9"></div>
+  <div id="attrrankout" style="margin-top:8px"></div>
+
+  <div class="sec">Circuit tracing <span style="color:var(--muted);font-weight:400">— causal influence downstream</span></div>
+  <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+    this layer is the <b>source</b> (channel above, or whole layer) · perturb it & watch what moves</div>
+  <label for="ctgt">Target layer (deeper)</label>
+  <select id="ctgt"><option value="">—</option></select>
+  <div class="row" style="margin-top:6px">
+    <button id="ctrace" style="margin-top:0">Boost → trace</button>
+    <button id="cablate" style="margin-top:0">Ablate → output</button>
+  </div>
+  <div id="ctraceout" style="margin-top:8px"></div>
+</div>
+
+<div id="toast"></div>
+<style>
+#toast{position:fixed;top:74px;left:50%;transform:translateX(-50%) translateY(-14px);
+  z-index:60;max-width:min(720px,72vw);padding:10px 16px;border-radius:6px;
+  background:rgba(10,14,24,.97);border:1px solid var(--line);color:var(--fg);
+  font-family:var(--mono);font-size:12px;line-height:1.5;white-space:pre-wrap;
+  box-shadow:0 8px 40px rgba(0,0,0,.6);opacity:0;pointer-events:none;
+  transition:opacity .18s, transform .18s}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{border-color:var(--err);color:#FFB4AE}
+</style>
+
+<div id="legend">
+  <span id="legmin">0</span><div id="legendbar"></div><span id="legmax">max</span>
+  <span style="color:var(--text)" id="legname">mean |activation|</span>
+</div>
+<div id="tooltip"></div>
+
+<!-- view bar: layouts · camera presets · architecture view -->
+<div id="viewbar" style="display:none">
+  <span class="vlab">LAYOUT</span>
+  <button class="vbtn sel" data-layout="layered">Layered</button>
+  <button class="vbtn" data-layout="helix">Helix</button>
+  <button class="vbtn" data-layout="radial">Radial</button>
+  <span class="vsep"></span>
+  <span class="vlab">CAMERA</span>
+  <button class="vbtn" data-cam="overview">Overview</button>
+  <button class="vbtn" data-cam="top">Top</button>
+  <button class="vbtn" data-cam="side">Side</button>
+  <span class="vsep"></span>
+  <span class="vlab">WIRING</span>
+  <button class="vbtn" data-wire="simple">Simple</button>
+  <button class="vbtn sel" data-wire="bundled">Bundled</button>
+  <button class="vbtn" data-wire="dense">Dense</button>
+  <button class="vbtn" data-wire="pyramids">Pyramids</button>
+  <span class="vsep"></span>
+  <button class="vbtn" id="mmbtn">⌘ Architecture</button>
+</div>
+
+<!-- live HUD counters -->
+<div id="hud" style="display:none">
+  <div class="hcell"><b id="h_active">—</b><span>ACTIVE LAYERS</span></div>
+  <div class="hcell"><b id="h_sparse">—</b><span>SPARSITY</span></div>
+  <div class="hcell"><b id="h_peak">—</b><span>PEAK |ACT|</span></div>
+  <div class="hcell"><b id="h_depth">—</b><span>SWEEP DEPTH</span></div>
+</div>
+
+<!-- temporal fMRI: carpet plot + transport -->
+<div id="timeline" style="display:none">
+  <div class="trow">
+    <button class="mini" id="playbtn" style="min-width:38px">▶</button>
+    <input type="range" id="frameslider" min="0" max="0" value="0" style="flex:1">
+    <span id="framelabel">— / —</span>
+    <button class="mini" id="recclose">✕</button>
+  </div>
+  <div class="alab">BOLD CARPET — layers × time <i>(click: x = seek frame, y = select layer)</i></div>
+  <canvas id="carpet" height="96"></canvas>
+</div>
+<style>
+#timeline{position:fixed;left:var(--rail-l);right:var(--rail-r);margin:0 auto;bottom:118px;z-index:8;
+  display:flex;flex-direction:column;gap:5px;transition:left .25s ease, right .25s ease;
+  width:min(1060px, calc(100vw - var(--rail-l) - var(--rail-r) - 32px));
+  background:rgba(7,11,20,.9);border:1px solid var(--hot);border-radius:6px;
+  padding:8px 12px;backdrop-filter:blur(6px);box-shadow:0 0 40px rgba(255,176,32,.12)}
+.trow{display:flex;align-items:center;gap:10px}
+.trow .mini{margin:0}
+#framelabel{font-family:var(--mono);font-size:11px;color:var(--hot);min-width:120px;text-align:right}
+#frameslider{accent-color:var(--hot);height:4px}
+#carpet{width:100%;border:1px solid #101828;border-radius:3px;cursor:crosshair;background:#04070E}
+</style>
+
+<!-- bottom analytics: fMRI strip + depth profile -->
+<div id="analytics" style="display:none">
+  <div class="acol" style="flex:3">
+    <div class="alab">LAYER STRIP — every layer, one column, colored by activation <i>(click to select)</i></div>
+    <canvas id="strip" height="52"></canvas>
+  </div>
+  <div class="acol" style="flex:1.2;min-width:220px">
+    <div class="alab">ACTIVITY BY DEPTH</div>
+    <canvas id="profile" height="52"></canvas>
+  </div>
+</div>
+
+<!-- mermaid architecture overlay -->
+<div id="mmwrap">
+  <div id="mmhead">
+    <span>ARCHITECTURE — Mermaid graph <i style="color:var(--muted)">(click a node to select it in 3D)</i></span>
+    <span><button class="mini" id="mmzoomout">−</button>
+          <button class="mini" id="mmzoomin">+</button>
+          <button class="mini" id="mmclose">✕ close</button></span>
+  </div>
+  <div id="mmscroll"><div id="mermaid"></div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.3/mermaid.min.js"></script>
+<style>
+#viewbar{position:fixed;top:14px;left:var(--rail-l);right:var(--rail-r);
+  margin:0 auto;width:fit-content;max-width:calc(100vw - var(--rail-l) - var(--rail-r) - 28px);
+  z-index:8;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;
+  background:rgba(7,11,20,.85);transition:left .25s ease, right .25s ease;
+  border:1px solid var(--line);border-radius:6px;padding:6px 10px;backdrop-filter:blur(6px)}
+.vlab{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.12em}
+.vsep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.vbtn{width:auto;margin:0;padding:5px 10px;font-size:11px;background:transparent;
+  border:1px solid transparent;color:var(--text)}
+.vbtn:hover{border-color:var(--line)}
+.vbtn.sel{background:var(--accent-dim);border-color:var(--accent);color:#fff}
+#hud{position:fixed;top:64px;right:calc(var(--rail-r) + 16px);z-index:8;
+  display:flex;flex-direction:column;gap:8px;transition:right .25s ease}
+.hcell{background:rgba(7,11,20,.85);border:1px solid var(--line);border-left:2px solid var(--hot);
+  border-radius:4px;padding:7px 12px;text-align:right;min-width:120px;backdrop-filter:blur(6px)}
+.hcell b{display:block;font-family:var(--mono);font-size:17px;color:var(--hot);font-weight:500}
+.hcell span{font-family:var(--mono);font-size:8px;color:var(--muted);letter-spacing:.14em}
+#analytics{position:fixed;left:var(--rail-l);right:var(--rail-r);margin:0 auto;bottom:12px;z-index:8;
+  display:flex;gap:14px;transition:left .25s ease, right .25s ease;
+  width:min(1060px, calc(100vw - var(--rail-l) - var(--rail-r) - 32px));background:rgba(7,11,20,.85);
+  border:1px solid var(--line);border-radius:6px;padding:8px 12px;backdrop-filter:blur(6px)}
+.acol{display:flex;flex-direction:column;gap:4px}
+.alab{font-family:var(--mono);font-size:8px;color:var(--muted);letter-spacing:.12em}
+.alab i{font-style:normal;color:#2E3D57}
+#strip,#profile{width:100%;border:1px solid #101828;border-radius:3px;cursor:crosshair;background:#04070E}
+#mmwrap{position:fixed;inset:60px 8vw 70px 8vw;z-index:20;display:none;flex-direction:column;
+  background:rgba(5,8,15,.97);border:1px solid var(--accent);border-radius:8px;
+  box-shadow:0 0 60px rgba(59,130,246,.25)}
+#mmhead{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;
+  border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.1em}
+#mmhead .mini{width:auto;margin:0 0 0 6px;padding:4px 10px}
+#mmscroll{overflow:auto;flex:1;padding:18px}
+#mermaid{transform-origin:0 0}
+#mermaid svg{max-width:none!important}
+</style>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------- colormaps ---------- */
+const INF = [[0,0,4],[22,11,57],[66,10,104],[106,23,110],[147,38,103],
+  [186,54,85],[221,81,58],[243,120,25],[252,165,10],[246,215,70],[252,255,164]];
+const CW  = [[59,76,192],[98,130,234],[141,176,254],[184,208,249],[221,221,221],
+  [245,196,173],[244,154,123],[222,96,77],[180,4,38]];   // coolwarm
+const lerpMap = (M,t)=>{ t=Math.min(1,Math.max(0,t));
+  const x=t*(M.length-1), i=Math.floor(x), f=x-i, a=M[i], b=M[Math.min(i+1,M.length-1)];
+  return [(a[0]+(b[0]-a[0])*f)/255,(a[1]+(b[1]-a[1])*f)/255,(a[2]+(b[2]-a[2])*f)/255]; };
+const inferno = t=>lerpMap(INF,t), coolwarm = t=>lerpMap(CW,t);
+const gradCSS = M => `linear-gradient(90deg, ${[0,.25,.5,.75,1].map(t=>{
+  const c=lerpMap(M,t); return `rgb(${c.map(v=>v*255|0).join(',')})`}).join(',')})`;
+
+/* ---------- scene ---------- */
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById('scene').appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04060B);
+scene.fog = new THREE.Fog(0x04060B, 260, 640);
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, .1, 2000);
+camera.position.set(70,45,120);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+/* Without bounds you can dolly the camera all the way onto the target, where
+   OrbitControls' multiplicative zoom has nothing left to scale and zooming back
+   OUT stops responding for good — only a reload recovers. Bound it. */
+controls.minDistance = 6;
+controls.maxDistance = 6000;
+scene.add(new THREE.AmbientLight(0xffffff,.9));
+const dl = new THREE.DirectionalLight(0xffffff,.8); dl.position.set(1,2,1.5); scene.add(dl);
+addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+/* ---------- state ---------- */
+let modelId=null, graph=null, layers=[], edgeLines=null, arcGroup=null;
+let isDiffusion=false;
+let lastAct=null, actScale=1, baseAct=null, baseScale=1;
+let selected=null, sweepT=-2, flyTo=null, hfAttached=false;
+const LAYER_GAP=16, LANE_GAP=26, SLAB=9;
+const IDLE = new THREE.Color(0x20304A);
+const boxGeo = new THREE.BoxGeometry(1,1,1);
+/* Unit fan: an open square-based PYRAMID, apex at the origin, base a unit
+   square at y=-1. (three.js spells a 4-sided cone `ConeGeometry(..., 4, ...)`
+   — there is no PyramidGeometry.) A square base is the right shape here
+   precisely because the thing it opens onto is a square slab of units; a round
+   cone would misrepresent the footprint it actually covers. The 45° roll puts
+   the base's EDGES on the local X/Z axes instead of its vertices, so the base
+   lines up with the slab's square rather than sitting on it as a diamond. */
+const fanGeo = new THREE.ConeGeometry(1,1,4,1,true);
+fanGeo.rotateY(Math.PI/4);
+fanGeo.translate(0,-0.5,0);
+const FAN_AXIS = new THREE.Vector3(0,-1,0);
+const $ = id=>document.getElementById(id);
+/* The status box lives at the BOTTOM of a long scrollable rail, so an error
+   raised by a control at the TOP (the gallery, say) landed far below the fold
+   and the click looked like it did nothing at all. Errors now also toast over
+   the canvas, where they cannot be missed. */
+let toastT=null;
+function toast(m, cls=''){
+  const t=$('toast');
+  t.textContent=m;
+  t.className = cls==='err' ? 'show err' : 'show';
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>{ t.className=''; }, cls==='err'?9000:3500);
+}
+const status = (m,cls='')=>{
+  const s=$('status'); s.textContent=m; s.className=cls;
+  if(cls==='err') toast(m,'err');
+};
+async function busy(btn, fn){
+  btn.disabled=true; btn.classList.add('busy');
+  try{ await fn(); } finally{ btn.disabled=false; btn.classList.remove('busy'); }
+}
+
+/* ---------- build 3D graph ---------- */
+function clearScene(){
+  layers.forEach(l=>scene.remove(l.mesh));
+  if(edgeLines) scene.remove(edgeLines);
+  if(flowPts){ scene.remove(flowPts); flowPts=null; }
+  if(arcGroup){ scene.remove(arcGroup); arcGroup=null; }
+  if(fanMesh){ scene.remove(fanMesh); fanMesh.geometry.dispose();
+               fanMesh.material.dispose(); fanMesh=null; }
+  fans=[]; layers=[]; edgeLines=null; selected=null; lastAct=null; baseAct=null;
+  $('contrast').checked=false; $('contrast').disabled=true;
+  $('inspector').classList.remove('open'); document.body.classList.remove('insp'); $('legend').style.display='none';
+  /* The readouts do NOT clear themselves: updateHUD() early-returns when
+     lastAct is null, so after switching models the previous network's counters
+     and plots stayed on screen, silently describing a model that was no longer
+     loaded. Nothing on screen said the numbers were stale. Wipe them here. */
+  nodeEnergy={};
+  rec=null; playing=false; recOrder=[];
+  $('timeline').style.display='none';
+  ['h_active','h_sparse','h_peak','h_depth'].forEach(id=>$(id).textContent='—');
+  for(const id of ['strip','profile','carpet']){
+    const c=$(id);
+    if(c && c.getContext) c.getContext('2d').clearRect(0,0,c.width,c.height);
+  }
+}
+function unitGuess(n){
+  const s=(n.shape||[]).filter(v=>typeof v==='number'&&v>0);
+  return Math.min(s.length>=2 ? s[1] : 64, 1024);
+}
+
+/* ----- layout modes: every layer gets a target position; render loop lerps ----- */
+let layoutMode='layered', layoutT=1, edgePairs=[], flowPts=null, flow=null;
+let edgeBundles=[], wireMode='bundled';
+let fanMesh=null, fans=[];
+/* segment budget per wiring mode — 0 = one line per edge (centre to centre).
+   BUDGET is the whole-scene cap; CAP limits any single edge so one fat Gemm
+   can't eat the entire budget. In 'pyramids' mode the dense/local edges are drawn
+   as fan volumes instead of lines, so only elementwise edges get lines. */
+const WIRE_BUDGET={simple:0, bundled:7000, dense:30000, pyramids:3000};
+const WIRE_CAP={simple:1, bundled:81, dense:576, pyramids:24};
+const FAN_BUDGET=2200;
+const DENSE_OPS=new Set(['Gemm','MatMul','Einsum','QLinearMatMul']);
+const LOCAL_OPS=new Set(['Conv','ConvTranspose','MaxPool','AveragePool',
+                         'GlobalAveragePool','LpPool','ConvInteger']);
+
+/* local offset of instance i inside a slab — mirrors the grid used in buildScene */
+function unitLocal(count, i){
+  const cols=Math.ceil(Math.sqrt(count)), cell=SLAB/cols;
+  const r=Math.floor(i/cols), c=i%cols;
+  return new THREE.Vector3((c-(cols-1)/2)*cell, ((cols-1)/2-r)*cell, 0);
+}
+function sampleIdx(n, k){
+  k=Math.max(1, Math.min(k, n));
+  if(n<=k) return Array.from({length:n},(_,i)=>i);
+  if(k===1) return [Math.floor(n/2)];
+  return Array.from({length:k},(_,t)=>Math.round(t*(n-1)/(k-1)));
+}
+
+/* Wire each edge as a bundle of unit→unit lines whose pattern reflects the op:
+   Gemm/MatMul → all-to-all (fully connected), Conv/Pool → local receptive
+   fans, everything else → parallel 1:1. Sampled, not exhaustive — an honest
+   approximation of the real connectivity, budgeted so big graphs stay smooth. */
+function buildEdgeBundles(){
+  edgeBundles=[];
+  if(!edgePairs.length) return;
+  const budget=WIRE_BUDGET[wireMode]||0;
+  if(!budget){                       // simple: the old centre-to-centre line
+    for(const [ai,bi] of edgePairs)
+      edgeBundles.push({a:ai, b:bi,
+        pairs:[[new THREE.Vector3(), new THREE.Vector3()]]});
+    return;
+  }
+  const per=Math.max(3, Math.min(WIRE_CAP[wireMode]||81,
+                                 Math.floor(budget/edgePairs.length)));
+  const kmax=Math.floor(Math.sqrt(WIRE_CAP[wireMode]||81));
+  for(const [ai,bi] of edgePairs){
+    const A=layers[ai], B=layers[bi], op=B.node.op;
+    const nA=A.count, nB=B.count, pairs=[];
+    /* in pyramids mode the dense + local edges become fan volumes instead */
+    if(wireMode==='pyramids' && (DENSE_OPS.has(op) || LOCAL_OPS.has(op))) continue;
+    if(DENSE_OPS.has(op)){                       // fully connected: every↔every
+      const k=Math.max(2, Math.min(kmax, Math.floor(Math.sqrt(per))));
+      const sa=sampleIdx(nA,k), sb=sampleIdx(nB,k);
+      for(const i of sa) for(const j of sb)
+        pairs.push([unitLocal(nA,i), unitLocal(nB,j)]);
+    } else if(LOCAL_OPS.has(op)){                // local receptive field fan
+      for(const j of sampleIdx(nB, Math.max(2, Math.floor(per/3)))){
+        const base=Math.round(j/Math.max(1,nB-1)*(nA-1));
+        for(const d of [-1,0,1]){
+          const i=Math.max(0, Math.min(nA-1, base+d));
+          pairs.push([unitLocal(nA,i), unitLocal(nB,j)]);
+        }
+      }
+    } else {                                     // elementwise: parallel 1:1
+      const k=Math.max(2, Math.min(per, nA, nB));
+      const sa=sampleIdx(nA,k), sb=sampleIdx(nB,k);
+      for(let t=0;t<k;t++)
+        pairs.push([unitLocal(nA,sa[t]), unitLocal(nB,sb[t])]);
+    }
+    edgeBundles.push({a:ai, b:bi, pairs});
+  }
+}
+/* Volumetric approximation of connectivity. A fully-connected layer is drawn
+   as one open PYRAMID per sampled SOURCE unit: apex on the unit, square base
+   opening over the whole target slab — "this unit reaches everything". The
+   base is square because the target slab is; overlapping the pyramids
+   additively builds up density, so the fan reads as dense wiring without
+   drawing k² lines. Conv/pool get the mirror image: a narrow pyramid per
+   TARGET unit opening back onto its receptive field. */
+function buildFans(){
+  fans=[];
+  if(fanMesh){ scene.remove(fanMesh); fanMesh.geometry.dispose();
+               fanMesh.material.dispose(); fanMesh=null; }
+  if(wireMode!=='pyramids' || !edgePairs.length) return;
+  const per=Math.max(2, Math.min(48, Math.floor(FAN_BUDGET/edgePairs.length)));
+  for(const [ai,bi] of edgePairs){
+    const A=layers[ai], B=layers[bi], op=B.node.op;
+    if(DENSE_OPS.has(op)){
+      for(const i of sampleIdx(A.count, per))
+        // r is the centre->vertex distance, so the square base's SIDE is
+        // r*sqrt(2) ~= 0.85 * SLAB: wide enough to read as "covers the whole
+        // layer", short of 100% because touching bases merge into a wall.
+        fans.push({a:ai, b:bi, apex:unitLocal(A.count,i),
+                   base:new THREE.Vector3(), r:SLAB*0.60, src:A.node.id});
+    } else if(LOCAL_OPS.has(op)){
+      for(const j of sampleIdx(B.count, per)){
+        const i=Math.round(j/Math.max(1,B.count-1)*(A.count-1));
+        fans.push({a:bi, b:ai, apex:unitLocal(B.count,j),
+                   base:unitLocal(A.count,i), r:SLAB*0.15, src:B.node.id});
+      }
+    }
+  }
+  if(!fans.length) return;
+  fanMesh=new THREE.InstancedMesh(fanGeo, new THREE.MeshBasicMaterial(
+    {transparent:true, opacity:.06, side:THREE.DoubleSide, depthWrite:false,
+     blending:THREE.AdditiveBlending}), fans.length);
+  fanMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  fanMesh.frustumCulled=false;
+  scene.add(fanMesh);
+  refreshFans(); tintFans();
+}
+const _fa=new THREE.Vector3(), _fb=new THREE.Vector3(), _fd=new THREE.Vector3(),
+      _fq=new THREE.Quaternion(), _fs=new THREE.Vector3(), _fm=new THREE.Matrix4();
+function refreshFans(){
+  if(!fanMesh) return;
+  for(let i=0;i<fans.length;i++){
+    const f=fans[i];
+    _fa.copy(layers[f.a].mesh.position).add(f.apex);
+    _fb.copy(layers[f.b].mesh.position).add(f.base);
+    _fd.subVectors(_fb,_fa);
+    const L=_fd.length()||1e-4;
+    _fq.setFromUnitVectors(FAN_AXIS, _fd.normalize());
+    _fs.set(f.r, L, f.r);
+    _fm.compose(_fa, _fq, _fs);
+    fanMesh.setMatrixAt(i, _fm);
+  }
+  fanMesh.instanceMatrix.needsUpdate=true;
+}
+/* fans glow with their source layer's activity */
+const _fc=new THREE.Color();
+function tintFans(){
+  if(!fanMesh) return;
+  for(let i=0;i<fans.length;i++){
+    const e=nodeEnergy[fans[i].src]||0;
+    const rgb=inferno(Math.pow(e,.7));
+    _fc.setRGB(Math.max(rgb[0],.10), Math.max(rgb[1],.14), Math.max(rgb[2],.26));
+    fanMesh.setColorAt(i,_fc);
+  }
+  if(fanMesh.instanceColor) fanMesh.instanceColor.needsUpdate=true;
+}
+
+function buildEdgeGeometry(){
+  if(edgeLines){ scene.remove(edgeLines); edgeLines.geometry.dispose(); edgeLines=null; }
+  let segs=0; for(const b of edgeBundles) segs+=b.pairs.length;
+  if(!segs) return;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(
+    new Float32Array(segs*6),3));
+  const many=wireMode!=='simple';
+  edgeLines=new THREE.LineSegments(g, new THREE.LineBasicMaterial(
+    {color: many?0x3A5580:0x1A2436, transparent:true,
+     opacity: many?.14:.65}));
+  scene.add(edgeLines);
+  refreshEdges();
+}
+function layoutPos(n, byDepth){
+  const lanes=byDepth[n.depth].length, dmax=Math.max(graph.depth_max,1);
+  if(layoutMode==='helix'){
+    const a=n.depth*.55, R=Math.max(46, dmax*2.4)+(n.lane-(lanes-1)/2)*LANE_GAP*.55;
+    return new THREE.Vector3(Math.cos(a)*R, (n.depth-dmax/2)*3.4, Math.sin(a)*R);
+  }
+  if(layoutMode==='radial'){
+    const r=24+n.depth*11;
+    const a=(n.lane+.5)/lanes*Math.PI*2 + n.depth*.35;
+    return new THREE.Vector3(Math.cos(a)*r, 0, Math.sin(a)*r);
+  }
+  return new THREE.Vector3((n.lane-(lanes-1)/2)*LANE_GAP, 0,
+                           (n.depth-dmax/2)*LAYER_GAP);
+}
+function applyLayout(animate=true){
+  const byDepth={};
+  graph.nodes.forEach(n=>{ (byDepth[n.depth]=byDepth[n.depth]||[]).push(n); });
+  for(const L of layers){
+    L.from=L.mesh.position.clone();
+    L.to=layoutPos(L.node, byDepth);
+  }
+  layoutT=animate?0:1;
+  if(!animate) layers.forEach(L=>{L.mesh.position.copy(L.to); L.center.copy(L.to);});
+}
+function refreshEdges(){
+  refreshFans();
+  if(!edgeLines) return;
+  const pos=edgeLines.geometry.attributes.position.array;
+  let o=0;
+  for(const bnd of edgeBundles){
+    const A=layers[bnd.a].mesh.position, B=layers[bnd.b].mesh.position;
+    for(let p=0;p<bnd.pairs.length;p++){
+      const pa=bnd.pairs[p][0], pb=bnd.pairs[p][1];
+      pos[o++]=A.x+pa.x; pos[o++]=A.y+pa.y; pos[o++]=A.z+pa.z;
+      pos[o++]=B.x+pb.x; pos[o++]=B.y+pb.y; pos[o++]=B.z+pb.z;
+    }
+  }
+  edgeLines.geometry.attributes.position.needsUpdate=true;
+}
+
+function buildScene(){
+  clearScene();
+  $('empty').style.display='none';
+  ['viewbar','hud','analytics'].forEach(id=>$(id).style.display='flex');
+  const byDepth={}, idx={};
+  graph.nodes.forEach(n=>{ (byDepth[n.depth]=byDepth[n.depth]||[]).push(n); });
+  for(const n of graph.nodes){
+    const count = unitGuess(n);
+    const cols = Math.ceil(Math.sqrt(count));
+    const cell = SLAB/cols;
+    const mesh = new THREE.InstancedMesh(boxGeo, new THREE.MeshLambertMaterial(), count);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const m = new THREE.Matrix4();
+    for(let i=0;i<count;i++){                 // instances relative to layer origin
+      const r=Math.floor(i/cols), c=i%cols;
+      m.makeScale(cell*.82, cell*.82, 1.6);
+      m.setPosition((c-(cols-1)/2)*cell, ((cols-1)/2-r)*cell, 0);
+      mesh.setMatrixAt(i,m); mesh.setColorAt(i, IDLE);
+    }
+    mesh.instanceColor.needsUpdate=true;
+    mesh.userData={node:n};
+    scene.add(mesh);
+    idx[n.id]=layers.length;
+    layers.push({node:n, mesh, count, center:new THREE.Vector3()});
+  }
+  applyLayout(false);
+  /* edges reference layer indices so they can follow layout transitions */
+  edgePairs=[];
+  for(const e of graph.edges)
+    if(idx[e.from]!==undefined && idx[e.to]!==undefined)
+      edgePairs.push([idx[e.from], idx[e.to]]);
+  buildEdgeBundles();
+  buildEdgeGeometry();
+  buildFans();
+  buildFlow();
+  camPreset('overview');
+  buildLayerList();
+  buildMermaid();
+}
+
+/* ----- data-flow particles streaming along edges ----- */
+function buildFlow(){
+  if(flowPts){ scene.remove(flowPts); flowPts=null; }
+  if(!edgePairs.length) return;
+  const N=Math.min(edgePairs.length*3, 2600);
+  flow={t:new Float32Array(N), v:new Float32Array(N),
+        e:new Uint32Array(N)};
+  const pos=new Float32Array(N*3), col=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    flow.e[i]=i%edgePairs.length;
+    flow.t[i]=Math.random();
+    flow.v[i]=.25+Math.random()*.5;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  g.setAttribute('color', new THREE.BufferAttribute(col,3));
+  flowPts=new THREE.Points(g, new THREE.PointsMaterial({size:1.5,
+    vertexColors:true, transparent:true, opacity:.9,
+    blending:THREE.AdditiveBlending, depthWrite:false}));
+  scene.add(flowPts);
+}
+function flowFrame(dt){
+  if(!flowPts) return;
+  const pos=flowPts.geometry.attributes.position.array,
+        col=flowPts.geometry.attributes.color.array;
+  for(let i=0;i<flow.t.length;i++){
+    flow.t[i]+=flow.v[i]*dt; if(flow.t[i]>1) flow.t[i]-=1;
+    const [ai,bi]=edgePairs[flow.e[i]];
+    const a=layers[ai].mesh.position, b=layers[bi].mesh.position, t=flow.t[i];
+    pos[i*3]=a.x+(b.x-a.x)*t; pos[i*3+1]=a.y+(b.y-a.y)*t; pos[i*3+2]=a.z+(b.z-a.z)*t;
+    const en=nodeEnergy[layers[bi].node.id]||0;      // brightness = target activity
+    const w=.10+Math.min(1,en)*.9, pulse=.7+.3*Math.sin((t+i)*12);
+    col[i*3]=.24*w*pulse; col[i*3+1]=.62*w*pulse; col[i*3+2]=1*w*pulse;
+  }
+  flowPts.geometry.attributes.position.needsUpdate=true;
+  flowPts.geometry.attributes.color.needsUpdate=true;
+}
+
+/* ----- ambience: starfield + floor grid ----- */
+{
+  const N=1300, p=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r=650+Math.random()*280, th=Math.random()*Math.PI*2,
+          ph=Math.acos(2*Math.random()-1);
+    p[i*3]=r*Math.sin(ph)*Math.cos(th); p[i*3+1]=r*Math.cos(ph);
+    p[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(p,3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial(
+    {color:0x2A3B5C, size:1.1, sizeAttenuation:false, transparent:true, opacity:.7})));
+  const grid=new THREE.GridHelper(900, 60, 0x0D1524, 0x0A111D);
+  grid.position.y=-56; scene.add(grid);
+}
+
+/* ---------- camera presets + view bar ---------- */
+let nodeEnergy={};
+function camPreset(kind){
+  const span=(graph? (graph.depth_max+2):10)*LAYER_GAP;
+  const P={overview:[span*.45, span*.3, span*.75],
+           top:[0.01, span*1.1, 0.01],
+           side:[span*1.05, span*.12, 0]}[kind]||[70,45,120];
+  flyTo={target:new THREE.Vector3(0,0,0),
+         pos:new THREE.Vector3(...P), t:0};
+}
+document.querySelectorAll('#viewbar [data-cam]').forEach(b=>
+  b.onclick=()=>camPreset(b.dataset.cam));
+document.querySelectorAll('#viewbar [data-layout]').forEach(b=>
+  b.onclick=()=>{
+    document.querySelectorAll('#viewbar [data-layout]').forEach(x=>x.classList.remove('sel'));
+    b.classList.add('sel');
+    layoutMode=b.dataset.layout;
+    applyLayout(true);
+    if(layoutMode==='radial') camPreset('top');
+    if(layoutMode==='helix') camPreset('overview');
+  });
+
+document.querySelectorAll('#viewbar [data-wire]').forEach(b=>
+  b.onclick=()=>{
+    if(!graph) return;
+    document.querySelectorAll('#viewbar [data-wire]').forEach(x=>x.classList.remove('sel'));
+    b.classList.add('sel');
+    wireMode=b.dataset.wire;
+    buildEdgeBundles();
+    buildEdgeGeometry();
+    buildFans();
+    let segs=0; for(const bn of edgeBundles) segs+=bn.pairs.length;
+    if(wireMode==='pyramids')
+      status(`Wiring: pyramids — ${fans.length.toLocaleString()} fan volumes + `+
+        `${segs.toLocaleString()} lines.\nEach pyramid is one unit reaching a whole `+
+        `layer; overlap = dense connectivity. Conv/pool fan back onto their `+
+        `receptive field. Fans glow with their source layer's activity.`,'ok');
+    else
+      status(`Wiring: ${wireMode} — ${segs.toLocaleString()} connections drawn`+
+        (wireMode==='simple'?'' : ' (sampled — Gemm/MatMul fan all-to-all, conv/pool fan locally).'),'ok');
+  });
+
+/* ---------- Mermaid architecture view ---------- */
+const OPCLASS=op=>{
+  op=op.toLowerCase();
+  if(/conv/.test(op)) return 'conv';
+  if(/relu|gelu|sigmoid|tanh|elu|softmax|erf/.test(op)) return 'act';
+  if(/norm|batch|layer/.test(op)) return 'norm';
+  if(/pool|resize|upsample/.test(op)) return 'pool';
+  if(/gemm|matmul|linear|einsum/.test(op)) return 'lin';
+  if(/attention|gather|embed/.test(op)) return 'attn';
+  if(/add|mul|sub|div|concat|split|slice|reshape|transpose|flatten|cast|unsqueeze|squeeze|reducemean/.test(op)) return 'shape';
+  return 'other';
+};
+let mmZoom=1, mmBuilt=false;
+function buildMermaid(){ mmBuilt=false; }        // lazy: render on first open
+async function renderMermaid(){
+  if(mmBuilt||!graph) return;
+  mmBuilt=true;
+  const cap=280, nodes=graph.nodes.slice(0,cap);
+  const id2m={}; nodes.forEach((n,i)=>id2m[n.id]='n'+i);
+  const esc=s=>s.replace(/["<>{}|\[\]]/g,'').slice(0,26);
+  let src='flowchart LR\n';
+  src+=`classDef conv fill:#0E2A4A,stroke:#3B82F6,color:#BFDBFE\n`;
+  src+=`classDef act fill:#3A1020,stroke:#F43F5E,color:#FECDD3\n`;
+  src+=`classDef norm fill:#122B22,stroke:#10B981,color:#A7F3D0\n`;
+  src+=`classDef pool fill:#2A2410,stroke:#F59E0B,color:#FDE68A\n`;
+  src+=`classDef lin fill:#251543,stroke:#8B5CF6,color:#DDD6FE\n`;
+  src+=`classDef attn fill:#301A3A,stroke:#D946EF,color:#F5D0FE\n`;
+  src+=`classDef shape fill:#0B1220,stroke:#334155,color:#94A3B8\n`;
+  src+=`classDef other fill:#111827,stroke:#4B5563,color:#D1D5DB\n`;
+  for(const n of nodes){
+    src+=`${id2m[n.id]}["${esc(n.op)}<br/><small>${esc(n.name)}</small>"]:::${OPCLASS(n.op)}\n`;
+    src+=`click ${id2m[n.id]} call mmPick("${n.id.replace(/"/g,'')}")\n`;
+  }
+  for(const e of graph.edges)
+    if(id2m[e.from]&&id2m[e.to]) src+=`${id2m[e.from]} --> ${id2m[e.to]}\n`;
+  if(graph.nodes.length>cap)
+    src+=`trunc["… ${graph.nodes.length-cap} more layers (list on the left)"]:::other\n`;
+  try{
+    mermaid.initialize({startOnLoad:false, securityLevel:'loose', theme:'dark',
+      flowchart:{curve:'basis', nodeSpacing:26, rankSpacing:40}});
+    const {svg, bindFunctions}=await mermaid.render('mmsvg', src);
+    $('mermaid').innerHTML=svg;
+    bindFunctions?.($('mermaid'));
+  }catch(err){
+    $('mermaid').innerHTML=`<div style="color:var(--err);font-family:var(--mono);font-size:11px">Mermaid failed: ${err.message}</div>`;
+  }
+}
+window.mmPick=id=>{
+  const n=graph.nodes.find(x=>x.id===id);
+  if(n){ $('mmwrap').style.display='none'; select(n); fly(n); }
+};
+$('mmbtn').onclick=async()=>{ $('mmwrap').style.display='flex'; await renderMermaid(); };
+$('mmclose').onclick=()=>$('mmwrap').style.display='none';
+$('mmzoomin').onclick=()=>{ mmZoom=Math.min(3,mmZoom*1.25); $('mermaid').style.transform=`scale(${mmZoom})`; };
+$('mmzoomout').onclick=()=>{ mmZoom=Math.max(.3,mmZoom/1.25); $('mermaid').style.transform=`scale(${mmZoom})`; };
+
+/* ---------- live HUD + fMRI strip + depth profile ---------- */
+let stripCols=[];
+function updateHUD(){
+  if(!lastAct){ return; }
+  let active=0, tot=0, sp=0, peak=0;
+  for(const L of layers){
+    const a=lastAct[L.node.id]; if(!a) continue;
+    tot++;
+    const e=a.stats.mean_abs||0;
+    if(e>actScale*.02) active++;
+    sp+=a.stats.sparsity||0;
+    peak=Math.max(peak, Math.abs(a.stats.max||0), Math.abs(a.stats.min||0));
+  }
+  $('h_active').textContent=`${active} / ${tot}`;
+  $('h_sparse').textContent=tot?((sp/tot*100).toFixed(1)+' %'):'—';
+  $('h_peak').textContent=peak?peak.toPrecision(3):'—';
+}
+function drawStrip(){
+  const cv=$('strip'); if(!graph) return;
+  const contrast=$('contrast').checked&&baseAct;
+  const ordered=[...graph.nodes].sort((a,b)=>a.depth-b.depth||a.lane-b.lane);
+  cv.width=cv.clientWidth*devicePixelRatio; 
+  const W=cv.width, H=cv.height, cw=W/ordered.length, ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  stripCols=ordered;
+  ordered.forEach((n,i)=>{
+    const a=lastAct?.[n.id];
+    let rgb=[.09,.13,.2];
+    if(a && !contrast) rgb=inferno(Math.pow(Math.min(1,(a.stats.mean_abs||0)/actScale),.6));
+    if(a && contrast && baseAct[n.id]){
+      const d=(a.stats.mean_abs||0)-(baseAct[n.id].stats.mean_abs||0);
+      rgb=coolwarm(.5+d/(2*actScale));
+    }
+    ctx.fillStyle=`rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`;
+    ctx.fillRect(i*cw, 4, Math.max(1,cw-.6), H-8);
+    if(selected&&selected.id===n.id){
+      ctx.strokeStyle='#fff'; ctx.strokeRect(i*cw+.5, 1.5, Math.max(1,cw-1), H-3);
+    }
+  });
+}
+$('strip').onclick=ev=>{
+  const r=$('strip').getBoundingClientRect();
+  const i=Math.floor((ev.clientX-r.left)/r.width*stripCols.length);
+  const n=stripCols[i]; if(n){ select(n); fly(n); }
+};
+$('strip').onmousemove=ev=>{
+  const r=$('strip').getBoundingClientRect();
+  const n=stripCols[Math.floor((ev.clientX-r.left)/r.width*stripCols.length)];
+  $('strip').title=n?`${n.op} — ${n.name}`:'';
+};
+function drawProfile(){
+  const cv=$('profile'); if(!graph||!lastAct) return;
+  cv.width=cv.clientWidth*devicePixelRatio;
+  const W=cv.width, H=cv.height, ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  const D=graph.depth_max+1, mean=new Float32Array(D), cnt=new Float32Array(D);
+  for(const n of graph.nodes){
+    const a=lastAct[n.id]; if(!a) continue;
+    mean[n.depth]+=a.stats.mean_abs||0; cnt[n.depth]++;
+  }
+  let mx=1e-9;
+  for(let d=0;d<D;d++){ if(cnt[d]) mean[d]/=cnt[d]; mx=Math.max(mx,mean[d]); }
+  ctx.beginPath();
+  ctx.moveTo(0,H);
+  for(let d=0;d<D;d++){
+    const x=D>1?d/(D-1)*W:W/2, y=H-4-(mean[d]/mx)*(H-10);
+    ctx.lineTo(x,y);
+  }
+  ctx.lineTo(W,H); ctx.closePath();
+  const gr=ctx.createLinearGradient(0,0,0,H);
+  gr.addColorStop(0,'rgba(59,130,246,.55)'); gr.addColorStop(1,'rgba(59,130,246,.04)');
+  ctx.fillStyle=gr; ctx.fill();
+  ctx.beginPath();
+  for(let d=0;d<D;d++){
+    const x=D>1?d/(D-1)*W:W/2, y=H-4-(mean[d]/mx)*(H-10);
+    d?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  }
+  ctx.strokeStyle='#7EB4FF'; ctx.lineWidth=1.6;
+  ctx.shadowColor='#3B82F6'; ctx.shadowBlur=6; ctx.stroke(); ctx.shadowBlur=0;
+  if(sweepT>-1.9){
+    const x=sweepT/Math.max(graph.depth_max,1)*W;
+    ctx.strokeStyle='rgba(255,190,60,.9)';
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+  }
+}
+
+/* ---------- temporal fMRI: recording + carpet + transport ---------- */
+let rec=null, recFrame=0, playing=false, playAcc=0, recOrder=[];
+const DIFFUSION_MODES=[["denoise","Denoising loop (noise → image)"],
+                       ["noise","Noise walk (latent drift)"]];
+const REC_MODES={
+  latent:[["denoise","Denoising loop (noise → image)"],["noise","Noise walk (latent drift)"]],
+  image:[["video","Video → frame per step"],["noise","Noise walk (latent drift)"]],
+  video:[["video","Video → sliding window"],["noise","Noise walk (latent drift)"]],
+  audio:[["audio","Audio → sliding window"],["noise","Noise walk (latent drift)"]],
+  text:[["text","Sentence → token by token"],["noise","Token walk (random drift)"]],
+  tensor:[["noise","Noise walk (latent drift)"]]};
+function setupRecModes(inputs, primary){
+  const p=inputs.find(i=>i.name===primary);
+  const modes = isDiffusion ? DIFFUSION_MODES
+                            : (REC_MODES[p?p.modality:'tensor']||REC_MODES.tensor);
+  $('recmode').innerHTML=modes.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  $('recmode').onchange=()=>{
+    const m=$('recmode').value;
+    $('recfile').style.display=(m==='video'||m==='audio')?'block':'none';
+    $('recfile').accept=m==='video'?'video/*':'audio/*';
+    $('rectext').style.display=m==='text'?'block':'none';
+    $('schedrow').style.display=(m==='denoise')?'block':'none';
+  };
+  $('recmode').onchange();
+  rec=null; $('timeline').style.display='none'; playing=false;
+}
+$('recbtn').onclick=()=>busy($('recbtn'), async ()=>{
+  if(!modelId){ status('Load a model first.','err'); return; }
+  const m=$('recmode').value, fd=new FormData();
+  fd.append('mode', m);
+  fd.append('frames', $('recframes').value||'48');
+  fd.append('normalize', $('norm').value);
+  fd.append('sample_rate', $('srate').value||'16000');
+  fd.append('schedule', $('sched').value);
+  if(m==='text'){
+    const t=$('rectext').value||$('stimtext').value;
+    if(!t){ status('Type a sentence to reveal token by token.','err'); return; }
+    if(!hfAttached) await fetch(`/api/models/${modelId}/tokenizer`,
+      {method:'POST', body:(()=>{const x=new FormData();x.append('kind','byte');return x;})()});
+    fd.append('text', t);
+  }
+  if(m==='video'||m==='audio'){
+    const f=$('recfile').files[0];
+    if(!f){ status(`Choose a ${m} file to record over.`,'err'); return; }
+    fd.append('media', f);
+  }
+  status('Recording sequence — running '+($('recframes').value||'48')+' frames…');
+  const r=await fetch(`/api/models/${modelId}/record`,{method:'POST',body:fd});
+  const d=await r.json();
+  if(!r.ok){ status(d.detail,'err'); return; }
+  rec=d; recFrame=0; playing=false; $('playbtn').textContent='▶';
+  recOrder=[...graph.nodes].sort((a,b)=>a.depth-b.depth||a.lane-b.lane)
+    .filter(n=>rec.timeline[n.id]);
+  $('timeline').style.display='flex';
+  $('frameslider').max=rec.frames-1; $('frameslider').value=0;
+  drawCarpet();
+  /* if the model has attention, auto-select it so arcs appear on scrub */
+  if(rec.attention && rec.attention.nodes.length){
+    const an=graph.nodes.find(n=>n.id===rec.attention.nodes[0]);
+    if(an){ select(an); fly(an); }
+  }
+  await seekTo(0);
+  const extra = rec.attention && rec.attention.nodes.length
+    ? `\n${rec.attention.nodes.length} attention layer(s) captured — scrub to watch the pattern form.` : '';
+  status(`Recorded ${rec.frames} frames · ${recOrder.length} layer tracks.${extra}`,'ok');
+});
+$('recclose').onclick=()=>{ rec=null; playing=false; $('timeline').style.display='none'; };
+
+function drawCarpet(){
+  if(!rec) return;
+  const cv=$('carpet'); cv.width=cv.clientWidth*devicePixelRatio;
+  const W=cv.width, H=cv.height, ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  const rows=recOrder.length, rh=H/rows, cw=W/rec.frames;
+  for(let y=0;y<rows;y++){
+    const tl=rec.timeline[recOrder[y].id];
+    for(let x=0;x<rec.frames;x++){
+      const rgb=inferno(Math.pow(Math.min(1,tl[x]/rec.scale),.6));
+      ctx.fillStyle=`rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`;
+      ctx.fillRect(x*cw, y*rh, Math.ceil(cw), Math.ceil(rh));
+    }
+    if(selected&&selected.id===recOrder[y].id){
+      ctx.strokeStyle='rgba(255,255,255,.85)';
+      ctx.strokeRect(0, y*rh+.5, W, rh-1);
+    }
+  }
+  const cx=recFrame*cw+cw/2;                      // playhead
+  ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke();
+}
+$('carpet').onclick=async ev=>{
+  if(!rec) return;
+  const r=$('carpet').getBoundingClientRect();
+  const f=Math.floor((ev.clientX-r.left)/r.width*rec.frames);
+  const li=Math.floor((ev.clientY-r.top)/r.height*recOrder.length);
+  if(recOrder[li]) select(recOrder[li]);
+  await seekTo(f);
+};
+$('carpet').onmousemove=ev=>{
+  if(!rec) return;
+  const r=$('carpet').getBoundingClientRect();
+  const li=Math.floor((ev.clientY-r.top)/r.height*recOrder.length);
+  const f=Math.floor((ev.clientX-r.left)/r.width*rec.frames);
+  const n=recOrder[li];
+  $('carpet').title=n?`${n.op} — ${n.name} @ ${rec.labels[f]||f}`:'';
+};
+
+/* fast path: paint whole layers from the timeline (scrub/play) */
+function paintFrame(k){
+  recFrame=k;
+  const c=new THREE.Color();
+  for(const L of layers){
+    const tl=rec.timeline[L.node.id];
+    if(!tl) continue;
+    const rgb=inferno(Math.pow(Math.min(1,tl[k]/rec.scale),.6));
+    c.setRGB(rgb[0],rgb[1],rgb[2]);
+    for(let i=0;i<L.count;i++) L.mesh.setColorAt(i,c);
+    L.mesh.instanceColor.needsUpdate=true;
+    nodeEnergy[L.node.id]=Math.min(1, tl[k]/rec.scale);
+  }
+  tintFans();
+  $('frameslider').value=k;
+  $('framelabel').textContent=`${k+1} / ${rec.frames} · ${rec.labels[k]||''}`;
+  $('h_depth').textContent=`f${k+1}`;
+  drawCarpet();
+}
+/* full fidelity: re-run the frame server-side */
+async function seekTo(k){
+  if(!rec) return;
+  paintFrame(k);
+  updateAttnFromRec(k);
+  const fd=new FormData(); fd.append('frame', k);
+  const r=await fetch(`/api/models/${modelId}/record/seek`,{method:'POST',body:fd});
+  if(!r.ok) return;
+  const d=await r.json();
+  lastAct=d.activations; actScale=Math.max(actScale, d.scale);
+  paint();                       // per-unit detail + strip/profile/HUD
+  drawCarpet();
+  if(selected) select(selected);
+}
+/* fast path: render the stored per-frame attention matrix (no server call) */
+function updateAttnFromRec(k){
+  if(!rec || !rec.attention || !selected || !selected.attention) return;
+  const M=rec.attention.frames[selected.id]?.[k];
+  if(!M) return;
+  const d={matrix:M, q:M.length, k:M[0].length, heads:1, tokens:(rec.attnTokens&&rec.attnTokens[k])||[]};
+  attnData=d;
+  const cv=$('attnheat'), ctx=cv.getContext('2d'), H=M.length, W=M[0].length;
+  cv.width=W; cv.height=H;
+  let mx=1e-9; for(const row of M) for(const v of row) mx=Math.max(mx,v);
+  const img=ctx.createImageData(W,H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const c=inferno(M[y][x]/mx), o=(y*W+x)*4;
+    img.data[o]=c[0]*255; img.data[o+1]=c[1]*255; img.data[o+2]=c[2]*255; img.data[o+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  if($('arcstoggle').checked) drawArcs(selected, d);
+}
+$('frameslider').oninput=ev=>{ playing=false; $('playbtn').textContent='▶';
+  paintFrame(parseInt(ev.target.value)); };
+$('frameslider').onchange=ev=>seekTo(parseInt(ev.target.value));
+$('playbtn').onclick=()=>{
+  if(!rec) return;
+  playing=!playing;
+  $('playbtn').textContent=playing?'⏸':'▶';
+  if(!playing) seekTo(recFrame);
+};
+
+/* ---------- layer list ---------- */
+function buildLayerList(){
+  const box=$('layerlist'), q=$('layerfilter').value.toLowerCase();
+  box.innerHTML='';
+  for(const n of graph.nodes){
+    if(q && !(n.op+' '+n.name+' '+n.id).toLowerCase().includes(q)) continue;
+    const d=document.createElement('div');
+    d.innerHTML=`<span>${n.name}</span><span class="op">${n.op}</span>`;
+    if(selected && selected.id===n.id) d.classList.add('sel');
+    d.onclick=()=>{ select(n); fly(n); };
+    box.appendChild(d);
+  }
+}
+$('layerfilter').oninput=buildLayerList;
+function fly(node){
+  const L=layers.find(l=>l.node.id===node.id); if(!L) return;
+  flyTo={target:L.center.clone(),
+         pos:L.center.clone().add(new THREE.Vector3(18,12,34)), t:0};
+}
+
+/* ---------- painting: absolute (inferno) & contrast (coolwarm) ---------- */
+function paint(){
+  if(!lastAct) return;
+  const contrast = $('contrast').checked && baseAct;
+  let scale=actScale, legmin='0', legname='mean |activation|', map=inferno;
+  if(contrast){
+    let mx=1e-9;
+    for(const L of layers){
+      const a=lastAct[L.node.id], b=baseAct[L.node.id];
+      if(!a||!b) continue;
+      for(let i=0;i<Math.min(a.units.length,b.units.length);i++)
+        mx=Math.max(mx, Math.abs(a.units[i]-b.units[i]));
+    }
+    scale=mx; legmin='−'+mx.toPrecision(3); legname='Δ activation (A − B)'; map=coolwarm;
+  }
+  const c=new THREE.Color();
+  for(const L of layers){
+    const a=lastAct[L.node.id];
+    if(!a) continue;
+    const b=contrast?baseAct[L.node.id]:null;
+    for(let i=0;i<L.count;i++){
+      const j=Math.floor(i*a.units.length/L.count);
+      let t;
+      if(contrast && b){
+        const d=(a.units[j]||0)-(b.units[Math.floor(i*b.units.length/L.count)]||0);
+        t=.5 + d/(2*scale);
+      } else {
+        t=Math.pow(Math.min(1,(a.units[j]||0)/scale), .6);
+      }
+      const rgb=map(t); c.setRGB(rgb[0],rgb[1],rgb[2]);
+      L.mesh.setColorAt(i,c);
+    }
+    L.mesh.instanceColor.needsUpdate=true;
+  }
+  $('legend').style.display='flex';
+  $('legendbar').style.background=gradCSS(contrast?CW:INF);
+  $('legmin').textContent=legmin;
+  $('legmax').textContent=scale.toPrecision(3);
+  $('legname').textContent=legname;
+  nodeEnergy={};
+  for(const n of graph.nodes){
+    const a=lastAct[n.id];
+    nodeEnergy[n.id]=a?Math.min(1,(a.stats.mean_abs||0)/actScale):0;
+  }
+  tintFans();
+  updateHUD(); drawStrip(); drawProfile();
+}
+$('contrast').onchange=paint;
+
+/* ---------- sweep ---------- */
+$('sweepbtn').onclick=()=>{ if(lastAct) sweepT=-1.5; };
+function sweepFrame(dt){
+  if(sweepT<-1.9){ if(!rec && $('h_depth').textContent!=='—') $('h_depth').textContent='—'; return; }
+  sweepT+=dt*6;
+  $('h_depth').textContent=Math.max(0,Math.min(graph.depth_max,sweepT)).toFixed(1);
+  for(const L of layers){
+    const d=Math.abs(L.node.depth-sweepT);
+    L.mesh.scale.setScalar(1+Math.max(0,1.8-d)*.28);
+  }
+  drawProfile();
+  if(sweepT>graph.depth_max+2){ sweepT=-2; layers.forEach(L=>L.mesh.scale.setScalar(1)); drawProfile(); }
+}
+
+/* ---------- picking ---------- */
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2(), tip=$('tooltip');
+addEventListener('pointermove', ev=>{
+  if(!layers.length) return;
+  ptr.set(ev.clientX/innerWidth*2-1, -(ev.clientY/innerHeight)*2+1);
+  ray.setFromCamera(ptr,camera);
+  const hit=ray.intersectObjects(layers.map(l=>l.mesh))[0];
+  if(hit){
+    const n=hit.object.userData.node;
+    tip.style.display='block';
+    tip.style.left=(ev.clientX+14)+'px'; tip.style.top=(ev.clientY+10)+'px';
+    tip.innerHTML=`<b>${n.op}</b> ${n.name}<br>[${(n.shape||[]).join('×')||'?'}] · ${n.params.toLocaleString()} params`;
+  } else tip.style.display='none';
+});
+addEventListener('click', ev=>{
+  if(ev.target.closest('.rail')||!layers.length) return;
+  ptr.set(ev.clientX/innerWidth*2-1, -(ev.clientY/innerHeight)*2+1);
+  ray.setFromCamera(ptr,camera);
+  const hit=ray.intersectObjects(layers.map(l=>l.mesh))[0];
+  if(hit) select(hit.object.userData.node);
+});
+
+/* ---------- inspector ---------- */
+async function select(node){
+  selected=node;
+  $('inspector').classList.add('open'); document.body.classList.add('insp');
+  $('iname').textContent=node.name;
+  $('iop').textContent=`${node.op} · [${(node.shape||[]).join(' × ')||'?'}] · ${node.params.toLocaleString()} params`;
+  buildLayerList();
+  const a=lastAct?.[node.id], kv=$('istats');
+  if(a){
+    const s=a.stats;
+    kv.innerHTML=Object.entries({
+      mean:s.mean, std:s.std, min:s.min, max:s.max, 'mean |x|':s.mean_abs,
+      RMS:s.l2, sparsity:(s.sparsity*100).toFixed(1)+' %',
+      elements:s.size.toLocaleString(),
+      'units shown':`${Math.min(a.n_units,1024)} / ${a.n_units} (${a.unit_kind})`
+    }).map(([k,v])=>`<b>${k}</b><i>${typeof v==='number'?v.toPrecision(4):v}</i>`).join('');
+    const ch=$('chsel');
+    ch.innerHTML='<option value="">mean over channels</option>';
+    if(s.shape.length===4)
+      for(let i=0;i<Math.min(s.shape[1],512);i++) ch.add(new Option(`channel ${i}`,i));
+    if(s.shape.length===3)
+      for(let i=0;i<Math.min(s.shape[2],512);i++) ch.add(new Option(`dim ${i}`,i));
+    loadHeat();
+    loadStats(node);
+  } else {
+    kv.innerHTML='<b>state</b><i>no stimulus yet</i>';
+    $('heat').getContext('2d').clearRect(0,0,$('heat').width,$('heat').height);
+    $('histo').getContext('2d').clearRect(0,0,$('histo').width,$('histo').height);
+    $('chgrid').getContext('2d').clearRect(0,0,$('chgrid').width,$('chgrid').height);
+  }
+  $('rawbox').textContent='—'; $('topk').innerHTML=''; $('decoded').style.display='none';
+  if(node.attention && lastAct?.[node.id]){
+    $('attnsec').style.display='block';
+    loadAttention(node);
+  } else {
+    $('attnsec').style.display='none';
+    clearArcs();
+  }
+  loadStimView();
+  loadWeights();
+  $('jlensout').innerHTML=''; $('jlensstack').innerHTML='';
+  $('attrheat').style.display='none'; $('attrtoks').style.display='none';
+  $('attrrankout').innerHTML='';
+  $('attrtrace').style.display='none'; $('attrmaxout').innerHTML='';
+  $('ctraceout').innerHTML=''; loadCircuitTargets();
+  drawStrip();
+}
+
+/* ---------- stimulus viewer ---------- */
+async function loadStimView(){
+  const box=$('stimview');
+  if(!lastAct){ box.textContent='run a stimulus to view it here'; return; }
+  const r=await fetch(`/api/models/${modelId}/stimulus`);
+  if(!r.ok){ box.textContent='—'; return; }
+  const d=await r.json();
+  const prim=d.inputs.find(i=>i.name===selected?.name) || d.inputs[0];
+  const mod=prim?prim.modality:'tensor';
+  box.innerHTML='';
+  if(d.tokens && d.tokens.length){
+    box.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:3px">`+
+      d.tokens.slice(0,64).map(t=>`<span style="background:#101A2B;border:1px solid var(--line);padding:1px 5px;border-radius:3px">${String(t.token).replace(/</g,'&lt;').replace(/\s/,'·')}</span>`).join('')+`</div>`;
+    return;
+  }
+  if(mod==='image'||mod==='video'){
+    const img=document.createElement('img');
+    img.src=`/api/models/${modelId}/stimulus/image?input=${encodeURIComponent(prim.name)}&t=${Date.now()}`;
+    img.style.cssText='width:100%;border:1px solid var(--line);border-radius:3px';
+    img.onerror=()=>{ box.textContent='(no viewable image for this input)'; };
+    box.appendChild(img);
+    return;
+  }
+  if(mod==='audio'){
+    const r2=await fetch(`/api/models/${modelId}/stimulus/waveform?input=${encodeURIComponent(prim.name)}`);
+    if(!r2.ok){ box.textContent='(no waveform)'; return; }
+    const w=await r2.json();
+    const cv=document.createElement('canvas'); cv.width=300; cv.height=60;
+    cv.style.cssText='width:100%;border:1px solid var(--line);border-radius:3px;background:#04070E';
+    const ctx=cv.getContext('2d'), V=w.values, n=V.length;
+    let mx=1e-9; for(const v of V) mx=Math.max(mx,Math.abs(v));
+    ctx.strokeStyle=w.kind==='waveform'?'#7EB4FF':'#FFB020'; ctx.lineWidth=1;
+    ctx.beginPath();
+    V.forEach((v,i)=>{ const x=i/n*cv.width, y=cv.height/2-(v/mx)*(cv.height/2-3);
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.stroke();
+    box.innerHTML=`<div style="font-size:10px">${w.kind} · ${w.n.toLocaleString()} samples</div>`;
+    box.appendChild(cv);
+    return;
+  }
+  box.textContent='(tensor input — no visual form)';
+}
+
+/* ---------- Jacobian lens ---------- */
+$('jlensbtn').onclick=()=>busy($('jlensbtn'), async ()=>{
+  if(!selected||!lastAct){ status('Run a stimulus and select a layer first.','err'); return; }
+  $('jlensout').innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">reading…</span>';
+  const r=await fetch(`/api/models/${modelId}/jlens?node=${encodeURIComponent(selected.id)}&k=10&n_probe=40`);
+  const d=await r.json();
+  if(!r.ok){ $('jlensout').innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  const mxp=Math.max(...d.topk.map(t=>t.prob),1e-9);
+  $('jlensout').innerHTML=
+    `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">`+
+    `pos ${d.position} (${d.pos_kind}) · out dim ${d.logits_dim}</div>`+
+    d.topk.map(t=>
+      `<div><span>${String(t.label).replace(/</g,'&lt;')}</span><span>${(t.prob*100).toFixed(1)}%</span></div>
+       <div class="bar" style="width:${Math.max(2,t.prob/mxp*100)}%"></div>`).join('');
+});
+$('jlensstackbtn').onclick=()=>busy($('jlensstackbtn'), async ()=>{
+  if(!lastAct){ status('Run a stimulus first.','err'); return; }
+  $('jlensstack').innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">scanning layers…</span>';
+  const r=await fetch(`/api/models/${modelId}/jlens/stack?k=4&n_probe=20&max_layers=14`);
+  const d=await r.json();
+  if(!r.ok){ $('jlensstack').innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  $('jlensstack').innerHTML=
+    `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">layer → top readouts (shallow to deep)</div>`+
+    d.rows.map(row=>
+      `<div style="font-family:var(--mono);font-size:10px;padding:2px 0;border-bottom:1px solid #101828;cursor:pointer"
+            data-node="${row.node}">
+         <span style="color:var(--hot)">d${row.depth} ${row.op}</span>
+         <span style="color:var(--muted)"> → ${row.top.map(t=>String(t).replace(/</g,'&lt;')).join(', ')}</span></div>`).join('');
+  document.querySelectorAll('#jlensstack [data-node]').forEach(el=>
+    el.onclick=()=>{ const n=graph.nodes.find(x=>x.id===el.dataset.node); if(n){ select(n); fly(n); } });
+});
+
+/* ---------- neuron attribution ---------- */
+function curChannel(){ const v=$('chsel').value; return v===''?null:v; }
+function infernoCSS(t){ const c=inferno(Math.max(0,Math.min(1,t)));
+  return `rgb(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0})`; }
+
+$('attrocc').onclick=()=>busy($('attrocc'), async ()=>{
+  if(!selected||!lastAct){ status('Run a stimulus and select a layer first.','err'); return; }
+  const ch=curChannel(), q=ch===null?'':`&channel=${ch}`;
+  $('attrrankout').innerHTML='';
+  const heat=$('attrheat'), toks=$('attrtoks');
+  heat.style.display='none'; toks.style.display='none';
+  status('Occluding input regions and measuring the drop…');
+  const r=await fetch(`/api/models/${modelId}/attribution/occlusion?node=${encodeURIComponent(selected.id)}${q}&grid=10`);
+  const d=await r.json();
+  if(!r.ok){ status(d.detail,'err'); return; }
+  status(`Occlusion attribution for ${ch===null?'whole layer':'channel '+ch} — brighter = more important to this unit.`,'ok');
+
+  if(d.kind==='image-grid'){
+    const S=d.saliency, g=d.grid;
+    let mx=1e-9; for(const row of S) for(const v of row) mx=Math.max(mx,Math.abs(v));
+    heat.width=g; heat.height=g;
+    const ctx=heat.getContext('2d'), img=ctx.createImageData(g,g);
+    for(let i=0;i<g;i++)for(let j=0;j<g;j++){
+      const v=Math.max(0,S[i][j])/mx, c=inferno(Math.pow(v,.6)), o=(i*g+j)*4;
+      img.data[o]=c[0]*255; img.data[o+1]=c[1]*255; img.data[o+2]=c[2]*255; img.data[o+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+    heat.style.display='block';
+  } else if(d.kind==='tokens'){
+    let mx=1e-9; for(const v of d.saliency) mx=Math.max(mx,Math.abs(v));
+    toks.innerHTML=d.tokens.map((t,i)=>{
+      const v=Math.max(0,d.saliency[i])/mx;
+      return `<span title="${d.saliency[i].toFixed(4)}" style="background:${infernoCSS(v)};color:${v>.5?'#000':'#fff'};padding:1px 5px;margin:1px;border-radius:3px">${String(t).replace(/</g,'&lt;').replace(/\s/,'·')}</span>`;
+    }).join('');
+    toks.style.display='block';
+  } else if(d.kind==='windows'){
+    const S=d.saliency, g=S.length; let mx=1e-9; for(const v of S) mx=Math.max(mx,Math.abs(v));
+    heat.width=g; heat.height=1;
+    const ctx=heat.getContext('2d'), img=ctx.createImageData(g,1);
+    S.forEach((v,i)=>{ const c=inferno(Math.pow(Math.max(0,v)/mx,.6));
+      img.data[i*4]=c[0]*255; img.data[i*4+1]=c[1]*255; img.data[i*4+2]=c[2]*255; img.data[i*4+3]=255; });
+    ctx.putImageData(img,0,0);
+    heat.style.height='28px'; heat.style.display='block';
+  }
+});
+
+$('attrrank').onclick=()=>busy($('attrrank'), async ()=>{
+  if(!selected||!lastAct){ status('Run a stimulus and select a layer first.','err'); return; }
+  const ch=curChannel(), q=ch===null?'':`&channel=${ch}`;
+  $('attrheat').style.display='none'; $('attrtoks').style.display='none';
+  const out=$('attrrankout');
+  out.innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">ranking…</span>';
+  // prefer recorded-frame ranking if a recording exists, else noise batch
+  let r, d, mode;
+  if(rec){
+    r=await fetch(`/api/models/${modelId}/attribution/rank_frames?node=${encodeURIComponent(selected.id)}${q}&top=8`);
+    mode='frames';
+  } else {
+    r=await fetch(`/api/models/${modelId}/attribution/rank_noise?node=${encodeURIComponent(selected.id)}${q}&n=24&top=6`);
+    mode='noise';
+  }
+  d=await r.json();
+  if(!r.ok){ out.innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  if(mode==='frames'){
+    const mx=Math.max(...d.ranked.map(x=>x.response),1e-9);
+    out.innerHTML=`<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">recorded frames that fire this unit hardest — click to jump</div>`+
+      d.ranked.map(x=>
+        `<div data-frame="${x.frame}" style="cursor:pointer"><span>${String(x.label).replace(/</g,'&lt;')}</span><span>${x.response.toFixed(3)}</span></div>
+         <div class="bar" style="width:${Math.max(2,x.response/mx*100)}%"></div>`).join('');
+    out.querySelectorAll('[data-frame]').forEach(el=>
+      el.onclick=()=>seekTo(parseInt(el.dataset.frame)));
+  } else {
+    const mx=Math.max(...d.ranked.map(x=>x.response),1e-9);
+    out.innerHTML=`<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">strongest of ${d.count} random inputs — this unit's empirical preference</div>`+
+      d.ranked.map(x=>
+        `<div><span>seed ${x.seed}</span><span>${x.response.toFixed(3)}</span></div>
+         <div class="bar" style="width:${Math.max(2,x.response/mx*100)}%"></div>`).join('');
+  }
+  status(`Ranked stimuli for ${ch===null?'whole layer':'channel '+ch}.`,'ok');
+});
+
+/* ---------- circuit tracing ---------- */
+async function loadCircuitTargets(){
+  const sel=$('ctgt'); sel.innerHTML='<option value="">—</option>';
+  if(!selected||!lastAct) return;
+  const r=await fetch(`/api/models/${modelId}/circuit/targets?source=${encodeURIComponent(selected.id)}`);
+  if(!r.ok) return;
+  const d=await r.json();
+  for(const t of d.targets) sel.add(new Option(`d${t.depth} ${t.op} · ${t.id.slice(-18)}`, t.id));
+  if(d.targets.length){                 // default to a mid-depth target
+    sel.value=d.targets[Math.floor(d.targets.length/2)].id;
+  }
+}
+$('ctrace').onclick=()=>busy($('ctrace'), async ()=>{
+  if(!selected||!lastAct){ status('Run a stimulus and select a source layer first.','err'); return; }
+  const tgt=$('ctgt').value;
+  if(!tgt){ status('Pick a target layer (deeper than the source).','err'); return; }
+  const ch=curChannel(), q=ch===null?'':`&source_channel=${ch}`;
+  const out=$('ctraceout');
+  out.innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">perturbing & tracing…</span>';
+  const r=await fetch(`/api/models/${modelId}/circuit/trace?source=${encodeURIComponent(selected.id)}&target=${encodeURIComponent(tgt)}${q}&mode=boost&strength=3&top=10`);
+  const d=await r.json();
+  if(!r.ok){ out.innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  const mx=Math.max(...d.top.map(t=>Math.abs(t.delta)),1e-9);
+  out.innerHTML=`<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">boosting ${ch===null?'whole source':'channel '+ch} 3× → target channels that move most (Δ)</div>`+
+    d.top.map(t=>{
+      const w=Math.max(2,Math.abs(t.delta)/mx*100), pos=t.delta>=0;
+      return `<div><span>ch ${t.channel}</span><span style="color:${pos?'#7EE787':'#FF7B72'}">${pos?'+':''}${t.delta.toFixed(3)}</span></div>
+        <div class="bar" style="width:${w}%;background:${pos?'#2A7D46':'#8B2C25'}"></div>`;
+    }).join('')+
+    `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px">total downstream change: ${d.total_change.toFixed(3)}</div>`;
+  status(`Traced ${selected.id} → ${tgt.slice(-18)}.`,'ok');
+});
+$('cablate').onclick=()=>busy($('cablate'), async ()=>{
+  if(!selected||!lastAct){ status('Run a stimulus and select a source layer first.','err'); return; }
+  const ch=curChannel(), q=ch===null?'':`&source_channel=${ch}`;
+  const out=$('ctraceout');
+  out.innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">ablating & measuring output…</span>';
+  const r=await fetch(`/api/models/${modelId}/circuit/ablate?source=${encodeURIComponent(selected.id)}${q}&top=8`);
+  const d=await r.json();
+  if(!r.ok){ out.innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  const flip=d.pred_changed
+    ? `<span style="color:#FF7B72">prediction flips: ${String(d.pred_before.label).replace(/</g,'&lt;')} → ${String(d.pred_after.label).replace(/</g,'&lt;')}</span>`
+    : `<span style="color:#7EE787">prediction holds: ${String(d.pred_before.label).replace(/</g,'&lt;')}</span>`;
+  const mx=Math.max(...d.top.map(t=>Math.abs(t.delta)),1e-9);
+  out.innerHTML=`<div style="font-size:10px;font-family:var(--mono);margin-bottom:4px">zero ${ch===null?'whole source':'channel '+ch} → output L2 Δ ${d.l2_change.toFixed(3)}<br>${flip}</div>`+
+    d.top.map(t=>{
+      const pos=t.delta>=0;
+      return `<div><span>${String(t.label).replace(/</g,'&lt;')}</span><span style="color:${pos?'#7EE787':'#FF7B72'}">${pos?'+':''}${t.delta.toFixed(3)}</span></div>
+        <div class="bar" style="width:${Math.max(2,Math.abs(t.delta)/mx*100)}%;background:${pos?'#2A7D46':'#8B2C25'}"></div>`;
+    }).join('');
+  status(`Ablated ${selected.id}.`,'ok');
+});
+let attnData=null;
+async function loadAttention(node, head){
+  const h=head===undefined ? ($('headsel').value===''?null:$('headsel').value) : head;
+  const q=h===null||h===''||h===undefined?'':`&head=${h}`;
+  const r=await fetch(`/api/models/${modelId}/attention?node=${encodeURIComponent(node.id)}${q}`);
+  if(!r.ok){ $('attnsec').style.display='none'; return; }
+  const d=await r.json(); attnData=d;
+  if(d.fused){
+    /* Flash/fused attention — no [Q,K] matrix exists. Show per-token energy. */
+    $('headsel').style.display='none';
+    $('arcstoggle').parentElement.style.display='none';
+    clearArcs();
+    const cv=$('attnheat'), ctx=cv.getContext('2d');
+    const E=d.token_energy||[], n=Math.max(E.length,1);
+    cv.width=Math.max(n,1); cv.height=1;         // 1-row strip, CSS stretches it
+    let mx=1e-9; for(const v of E) mx=Math.max(mx,v);
+    const img=ctx.createImageData(n,1);
+    E.forEach((v,i)=>{ const c=inferno(Math.pow(v/mx,.6));
+      img.data[i*4]=c[0]*255; img.data[i*4+1]=c[1]*255; img.data[i*4+2]=c[2]*255; img.data[i*4+3]=255; });
+    ctx.putImageData(img,0,0);
+    $('attntoks').innerHTML=`<span style="color:var(--hot)">⚡ fused / flash attention</span> — `+
+      d.note+(d.tokens.length?'<br>tokens: '+d.tokens.slice(0,32).map(t=>t.replace(/\s/,'·')).join(' '):'');
+    return;
+  }
+  $('headsel').style.display='block';
+  $('arcstoggle').parentElement.style.display='flex';
+  const hs=$('headsel');
+  if(hs.options.length!==d.heads+1){
+    hs.innerHTML='<option value="">mean over heads</option>'+
+      Array.from({length:d.heads},(_,i)=>`<option value="${i}">head ${i}</option>`).join('');
+  }
+  /* heatmap */
+  const cv=$('attnheat'), ctx=cv.getContext('2d'), M=d.matrix;
+  const H=M.length, W=M[0].length; cv.width=W; cv.height=H;
+  let mx=1e-9; for(const row of M) for(const v of row) mx=Math.max(mx,v);
+  const img=ctx.createImageData(W,H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const c=inferno(M[y][x]/mx), o=(y*W+x)*4;
+    img.data[o]=c[0]*255; img.data[o+1]=c[1]*255; img.data[o+2]=c[2]*255; img.data[o+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  $('attntoks').textContent = d.tokens.length
+    ? 'tokens: '+d.tokens.slice(0,32).map(t=>t.replace(/\s/,'·')).join(' ')
+    : `${d.q} queries × ${d.k} keys`;
+  if($('arcstoggle').checked) drawArcs(node, d);
+}
+$('headsel').onchange=()=>{ if(selected&&selected.attention) loadAttention(selected); };
+$('arcstoggle').onchange=()=>{
+  if(!selected) return;
+  if($('arcstoggle').checked && attnData) drawArcs(selected, attnData);
+  else clearArcs();
+};
+
+/* ---------- token→token attention arcs in 3D ---------- */
+function clearArcs(){ if(arcGroup){ scene.remove(arcGroup); arcGroup=null; } }
+function drawArcs(node, d){
+  clearArcs();
+  const L=layers.find(l=>l.node.id===node.id); if(!L) return;
+  const M=d.matrix, Q=M.length, K=M[0].length, n=Math.max(Q,K);
+  arcGroup=new THREE.Group();
+  const R=Math.max(10, n*0.9), base=L.center.clone();
+  /* token nodes on a ring around the layer */
+  const pos=i=>new THREE.Vector3(
+    base.x+Math.cos(i/n*Math.PI*2-Math.PI/2)*R, base.y+7,
+    base.z+Math.sin(i/n*Math.PI*2-Math.PI/2)*R);
+  const dot=new THREE.SphereGeometry(.5,8,8);
+  for(let i=0;i<n;i++){
+    const m=new THREE.Mesh(dot, new THREE.MeshBasicMaterial({color:0x5B7BB0}));
+    m.position.copy(pos(i)); arcGroup.add(m);
+  }
+  /* Each query's strongest keys. This used to be an absolute cut (w > 0.08),
+     which quietly broke on any real sentence: attention rows are a softmax
+     summing to 1, so with n tokens the average weight is 1/n. At 22 tokens
+     that is 0.045 — under the threshold, so NO arcs were drawn at all and the
+     3D view showed a bare ring of dots. Taking each row's top-k, with a floor
+     relative to that row's own max, works at any sequence length. */
+  const PER_Q=3;
+  const links=[];
+  for(let qy=0;qy<Q;qy++){
+    const row=M[qy].map((w,kx)=>[kx,w]).sort((a,b)=>b[1]-a[1]);
+    const rowMax=row.length?row[0][1]:0;
+    if(rowMax<=1e-9) continue;
+    for(const [kx,w] of row.slice(0,PER_Q))
+      if(w > rowMax*0.15) links.push([qy,kx,w]);
+  }
+  links.sort((a,b)=>b[2]-a[2]);
+  let mx=1e-9; for(const l of links) mx=Math.max(mx,l[2]);
+  for(const [qy,kx,w] of links.slice(0,240)){
+    const a=pos(qy), b=pos(kx);
+    const mid=a.clone().add(b).multiplyScalar(.5);
+    mid.y+=a.distanceTo(b)*.4+3;                 // arc lift
+    const curve=new THREE.QuadraticBezierCurve3(a, mid, b);
+    const g=new THREE.BufferGeometry().setFromPoints(curve.getPoints(16));
+    const rgb=inferno(Math.pow(w/mx,.5));
+    arcGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial(
+      {color:new THREE.Color(rgb[0],rgb[1],rgb[2]),
+       transparent:true, opacity:.25+.65*(w/mx)})));
+  }
+  scene.add(arcGroup);
+}
+async function loadStats(node){
+  const r=await fetch(`/api/models/${modelId}/stats?node=${encodeURIComponent(node.id)}`);
+  if(!r.ok) return;
+  const d=await r.json();
+  /* histogram — log-scaled inferno bars with zero line */
+  const cv=$('histo'), ctx=cv.getContext('2d'), W=cv.width, H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  const mx=Math.log10(1+Math.max(...d.hist,1)), bw=W/d.hist.length;
+  d.hist.forEach((h,i)=>{
+    const v=Math.log10(1+h)/mx, rgb=inferno(.15+v*.85);
+    ctx.fillStyle=`rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`;
+    ctx.fillRect(i*bw+1, H-4-v*(H-16), bw-2, v*(H-16));
+  });
+  const [lo,hi]=d.edges;
+  if(lo<0&&hi>0){                                  // zero marker
+    const x=(-lo)/(hi-lo)*W;
+    ctx.strokeStyle='rgba(140,170,220,.5)'; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.fillStyle='#4C5B77'; ctx.font='9px JetBrains Mono';
+  ctx.fillText(lo.toPrecision(3), 3, H-1);
+  const t=hi.toPrecision(3); ctx.fillText(t, W-ctx.measureText(t).width-3, H-1);
+  /* channel grid */
+  const gv=$('chgrid'), gc=gv.getContext('2d');
+  gc.clearRect(0,0,gv.width,gv.height);
+  if(d.channel_means&&d.channel_means.length>1){
+    const n=d.channel_means.length, cols=Math.ceil(Math.sqrt(n*(gv.width/gv.height)));
+    const rows=Math.ceil(n/cols), cw=gv.width/cols, chh=gv.height/rows;
+    const cmx=Math.max(...d.channel_means,1e-9);
+    d.channel_means.forEach((v,i)=>{
+      const rgb=inferno(Math.pow(v/cmx,.7));
+      gc.fillStyle=`rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`;
+      gc.fillRect((i%cols)*cw+.5, Math.floor(i/cols)*chh+.5, cw-1, chh-1);
+    });
+    gv.title=`${n} channels — brightest = most active`;
+  } else {
+    gc.fillStyle='#26334D'; gc.font='9px JetBrains Mono';
+    gc.fillText('no channel axis', 6, 24);
+  }
+}
+$('chsel').onchange=()=>{ loadHeat(); loadWeights(); };
+async function loadHeat(){
+  if(!selected||!lastAct) return;
+  const ch=$('chsel').value, q=ch===''?'':`&channel=${ch}`;
+  const r=await fetch(`/api/models/${modelId}/spatial?node=${encodeURIComponent(selected.id)}${q}`);
+  if(!r.ok) return;
+  const {map}=await r.json();
+  const cv=$('heat'), ctx=cv.getContext('2d');
+  if(!map){ ctx.clearRect(0,0,cv.width,cv.height); return; }
+  const H=map.length, W=map[0].length;
+  cv.width=W; cv.height=H;
+  let mx=1e-9; for(const row of map) for(const v of row) mx=Math.max(mx,v);
+  const img=ctx.createImageData(W,H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const c=inferno(map[y][x]/mx), o=(y*W+x)*4;
+    img.data[o]=c[0]*255; img.data[o+1]=c[1]*255; img.data[o+2]=c[2]*255; img.data[o+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+$('rawbtn').onclick=async ()=>{
+  if(!selected) return;
+  const off=parseInt($('rawoff').value||'0'), ch=$('chsel').value;
+  const q=ch===''?'':`&channel=${ch}`;
+  const r=await fetch(`/api/models/${modelId}/raw?node=${encodeURIComponent(selected.id)}&offset=${off}&limit=256${q}`);
+  const d=await r.json();
+  if(!r.ok){ $('rawbox').textContent=d.detail; return; }
+  $('rawbox').textContent=
+    `shape ${JSON.stringify(d.shape)}  ·  ${d.offset}…${d.offset+d.values.length} of ${d.total}\n\n`+
+    d.values.map((v,i)=>((i%4===0&&i)?'\n':'')+v.toExponential(3).padStart(11)).join(' ');
+};
+$('imgdec').onclick=()=>{
+  if(!selected) return;
+  const img=$('decoded');
+  img.src=`/api/models/${modelId}/decode/image?node=${encodeURIComponent(selected.id)}&t=${Date.now()}`;
+  img.style.display='block';
+  img.onerror=()=>{ img.style.display='none'; status('This tensor cannot be rendered as an image.','err'); };
+};
+$('topkdec').onclick=async ()=>{
+  if(!selected) return;
+  const r=await fetch(`/api/models/${modelId}/decode/topk?node=${encodeURIComponent(selected.id)}&k=10`);
+  const d=await r.json();
+  if(!r.ok){ status(d.detail,'err'); return; }
+  $('topk').innerHTML=d.topk.map(t=>
+    `<div><span>${t.label.replace(/</g,'&lt;')}</span><span>${(t.prob*100).toFixed(2)} %</span></div>
+     <div class="bar" style="width:${Math.max(2,t.prob*100)}%"></div>`).join('');
+};
+
+/* ---------- model loading ---------- */
+/* ---------- multimodal stimulus cards ---------- */
+let multiInputs = null;    // stimulus input records when >1, else null
+const CARD_MODES = ['image','text','audio','video','noise','zeros'];
+const MEDIA_ACCEPT = {image:'image/*', audio:'audio/*', video:'video/*'};
+function buildCards(inputs, stimNames){
+  const stims = inputs.filter(i=>stimNames.includes(i.name));
+  multiInputs = stims.length>1 ? stims : null;
+  $('multistim').style.display = multiInputs ? 'block':'none';
+  $('singlestim').style.display = multiInputs ? 'none':'block';
+  if(!multiInputs) return;
+  $('multistim').innerHTML = stims.map(i=>{
+    const def = CARD_MODES.includes(i.modality) ? i.modality : 'noise';
+    return `<div class="card" data-input="${i.name}">
+      <div class="hd"><span>${i.name}</span>
+        <b>${MODALITY_ICON[i.modality]||i.modality}</b></div>
+      <select class="cmode">${CARD_MODES.map(m=>
+        `<option value="${m}"${m===def?' selected':''}>${m}</option>`).join('')}</select>
+      <input type="file" class="cfile" style="margin-top:6px;display:${MEDIA_ACCEPT[def]?'block':'none'}"
+             accept="${MEDIA_ACCEPT[def]||''}">
+      <textarea class="ctext" placeholder="text stimulus…"
+        style="margin-top:6px;display:${def==='text'?'block':'none'}"></textarea>
+    </div>`;}).join('');
+  document.querySelectorAll('#multistim .cmode').forEach(sel=>{
+    sel.onchange=()=>{
+      const card=sel.closest('.card'), m=sel.value;
+      card.querySelector('.cfile').style.display = MEDIA_ACCEPT[m]?'block':'none';
+      if(MEDIA_ACCEPT[m]) card.querySelector('.cfile').accept=MEDIA_ACCEPT[m];
+      card.querySelector('.ctext').style.display = m==='text'?'block':'none';
+    };
+  });
+}
+
+function onLoaded(d){
+  modelId=d.model_id; graph=d.graph; isDiffusion=!!d.diffusion;
+  registerModel(d.model_id, d.source_name || d.model_id);
+  buildScene();
+  renderInputs(d.inputs, d.primary_input, d.probe);
+  ['inputsec','stimsec','layersec','decodesec','expsec','latsec','healthsec','diffsec'].forEach(id=>$(id).style.display='block');
+  $('recover').style.display='none';
+  buildCards(d.inputs, d.stimulus_inputs||[d.primary_input]);
+  setupRecModes(d.inputs, d.primary_input);
+  if(!multiInputs) autoMode(d.inputs, d.primary_input);
+  const prim=d.inputs.find(i=>i.name===d.primary_input);
+  status(`Loaded ${d.source_name}\n${graph.nodes.length} layers · depth ${graph.depth_max}`+
+    (multiInputs
+      ? `\nmultimodal: ${multiInputs.map(i=>i.modality).join(' + ')} — one stimulus per input`
+      : `\ndetected modality: ${prim?prim.modality:'?'}`)+
+    (d.probe.ok?'':'\n⚠ '+d.probe.hint), d.probe.ok?'ok':'err');
+}
+/* ---------- model registry + diffing ---------- */
+const loadedModels=[];      // {id, name}
+function registerModel(id, name){
+  if(!loadedModels.find(m=>m.id===id)) loadedModels.push({id, name});
+  refreshDiffDropdown();
+}
+function refreshDiffDropdown(){
+  const sel=$('diffb'); if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— another loaded model —</option>';
+  for(const m of loadedModels){
+    if(m.id!==modelId) sel.add(new Option(m.name.slice(0,32), m.id));
+  }
+  if(cur) sel.value=cur;
+}
+$('diffbtn').onclick=()=>busy($('diffbtn'), async ()=>{
+  const bId=$('diffb').value;
+  if(!bId){ status('Pick another loaded model to compare against. Load a second model first if the list is empty.','err'); return; }
+  if(!lastAct){ status('Run a stimulus on this model (A) first — the diff replays it through B.','err'); return; }
+  const out=$('diffout');
+  out.innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">running B on the same stimulus & comparing…</span>';
+  const r=await fetch(`/api/diff?model_a=${modelId}&model_b=${bId}&top=12`);
+  const d=await r.json();
+  if(!r.ok){ out.innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  // profile canvas: per-depth relative L2 divergence
+  const cv=$('diffcanvas'); cv.style.display='block';
+  const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height);
+  const prof=d.profile, n=prof.length||1, bw=cv.width/n;
+  let mx=1e-9; for(const p of prof) mx=Math.max(mx,p.rel_l2);
+  prof.forEach((p,i)=>{
+    const h=(p.rel_l2/mx)*(cv.height-4);
+    const rgb=inferno(Math.pow(p.rel_l2/mx,.6));
+    ctx.fillStyle=`rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`;
+    ctx.fillRect(i*bw, cv.height-h, Math.max(1,bw-1), h);
+  });
+  const o=d.output;
+  const outLine = o
+    ? (o.pred_changed
+        ? `<span style="color:#FF7B72">prediction differs: ${String(o.pred_a.label).replace(/</g,'&lt;')} → ${String(o.pred_b.label).replace(/</g,'&lt;')}</span>`
+        : `<span style="color:#7EE787">same prediction: ${String(o.pred_a.label).replace(/</g,'&lt;')}</span>`)
+    : '';
+  out.innerHTML=
+    `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">`+
+    `${d.n_matched} layers matched by ${d.match_mode} · bars = per-depth divergence (shallow→deep)</div>`+
+    (outLine?`<div style="font-size:11px;font-family:var(--mono);margin-bottom:6px">${outLine}</div>`:'')+
+    `<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin:4px 0">most changed layers:</div>`+
+    d.top_divergent.slice(0,8).map(t=>{
+      const mxr=d.top_divergent[0].rel_l2||1e-9;
+      return `<div data-node="${t.node_a}" style="cursor:pointer"><span>d${t.depth} ${t.op}</span><span>${(t.rel_l2).toFixed(3)}</span></div>
+        <div class="bar" style="width:${Math.max(2,t.rel_l2/mxr*100)}%"></div>`;
+    }).join('');
+  out.querySelectorAll('[data-node]').forEach(el=>
+    el.onclick=()=>{ const nn=graph.nodes.find(x=>x.id===el.dataset.node); if(nn){ select(nn); fly(nn); } });
+  status(`Diffed against B — ${d.n_matched} layers compared.`,'ok');
+});
+
+/* ---------- activation maximization ---------- */
+$('attrmax').onclick=()=>busy($('attrmax'), async ()=>{
+  if(!selected||!lastAct){ status('Run a stimulus and select a layer first.','err'); return; }
+  const ch=curChannel();
+  $('attrheat').style.display='none'; $('attrtoks').style.display='none';
+  $('attrrankout').innerHTML='';
+  $('attrmaxout').textContent='searching input space…';
+  status(`Synthesizing the input that maximally excites ${ch===null?selected.name:selected.name+' ch '+ch}…\n(gradient-free evolutionary search — a few hundred forward passes)`);
+  const fd=new FormData();
+  fd.append('node', selected.id);
+  if(ch!==null) fd.append('channel', ch);
+  const r=await fetch(`/api/models/${modelId}/attribution/maximize`,{method:'POST',body:fd});
+  const d=await r.json();
+  if(!r.ok){ $('attrmaxout').textContent=''; status(d.detail,'err'); return; }
+
+  /* the server already ran the synthesized input — repaint everything from it */
+  if(d.run){
+    lastAct=d.run.activations; actScale=Math.max(actScale, d.run.scale);
+    paint();
+    loadStimView();
+    if(selected) select(selected);
+  }
+  /* optimization trace */
+  const cv=$('attrtrace'); cv.style.display='block';
+  const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height);
+  const T=d.trace, n=T.length;
+  let mn=Math.min(...T), mx=Math.max(...T); const rng=(mx-mn)||1e-9;
+  ctx.strokeStyle='#FFB020'; ctx.lineWidth=1.4; ctx.beginPath();
+  T.forEach((v,i)=>{ const x=i/(n-1||1)*cv.width, y=cv.height-3-((v-mn)/rng)*(cv.height-6);
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.stroke();
+  $('attrmaxout').innerHTML=
+    `response <b style="color:var(--hot)">${d.start.toFixed(3)} → ${d.best.toFixed(3)}</b> `+
+    `(<b>${d.gain.toFixed(1)}×</b>) over ${d.steps_run} steps`+
+    (d.kind==='tokens'
+      ? `<br>tokens: ${d.tokens.slice(0,24).map(t=>String(t).replace(/</g,'&lt;')).join(' ')}`
+      : (d.regularized?'<br>blur + jitter regularized · norm-capped':''));
+  status(`✦ Synthesized — this unit fires ${d.gain.toFixed(1)}× harder on it than where the search started.\nThe 3D view and the stimulus viewer now show the network responding to it.`,'ok');
+});
+
+/* ---------- weight / filter viewer ---------- */
+async function loadWeights(){
+  const box=$('wout'), img=$('wimg'), hc=$('whist');
+  img.style.display='none'; hc.style.display='none';
+  if(!selected||!modelId){ box.textContent='—'; return; }
+  const r=await fetch(`/api/models/${modelId}/weights?node=${encodeURIComponent(selected.id)}`);
+  if(!r.ok){ box.textContent='—'; return; }
+  const d=await r.json();
+  if(!d.has_weights){ box.textContent=d.note; return; }
+  const t=d.tensors[0];
+  const ch=curChannel();
+  let line=`${d.tensors.map(x=>`${x.name} ${x.kind} [${x.shape.join('×')}]`).join(' · ')}<br>`+
+    `μ ${t.mean.toFixed(3)} · σ ${t.std.toFixed(3)} · ‖w‖ ${t.l2.toFixed(1)}`+
+    (t.zeros_pct>1?` · <span style="color:#FFB020">${t.zeros_pct.toFixed(0)}% zeros</span>`:'');
+  if(ch!==null && t.filter_norms && t.filter_norms[ch]!==undefined){
+    const ns=t.filter_norms, me=ns[ch];
+    const rank=ns.filter(v=>v>me).length+1;
+    line+=`<br><span style="color:var(--hot)">filter ${ch}: ‖w‖ ${me.toFixed(3)}</span>`+
+          ` — ${rank}/${ns.length} strongest`;
+  }
+  box.innerHTML=line;
+  /* weight histogram */
+  const H=t.hist, n=H.length, mx=Math.max(...H,1);
+  const ctx=hc.getContext('2d'); ctx.clearRect(0,0,hc.width,hc.height);
+  H.forEach((v,i)=>{ const h=(v/mx)*(hc.height-3);
+    ctx.fillStyle='#7EB4FF'; ctx.fillRect(i*hc.width/n, hc.height-h, Math.max(1,hc.width/n-1), h); });
+  hc.style.display='block';
+  /* kernel contact sheet */
+  if(d.tensors.some(x=>x.kind==='kernel')){
+    img.src=`/api/models/${modelId}/weights/image?node=${encodeURIComponent(selected.id)}&t=${Date.now()}`;
+    img.onload=()=>{ img.style.display='block'; };
+    img.onerror=()=>{ img.style.display='none'; };
+  }
+}
+
+
+/* ---------- session export ---------- */
+$('expbtn').onclick=()=>busy($('expbtn'), async ()=>{
+  if(!modelId){ status('Load a model first.','err'); return; }
+  const fd=new FormData();
+  fd.append('notes', $('expnotes').value||'');
+  fd.append('include_health', $('exphealth').checked?'true':'false');
+  fd.append('include_latency', $('explat').checked?'true':'false');
+  status('Building the report…');
+  const r=await fetch(`/api/models/${modelId}/export`,{method:'POST',body:fd});
+  if(!r.ok){ status('Export failed.','err'); return; }
+  const blob=await r.blob();
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`aifmri-report.html`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+  status('Report downloaded — a single self-contained HTML file.','ok');
+});
+
+/* ---------- latency lens ---------- */
+let latData=null;
+$('latbtn').onclick=()=>busy($('latbtn'), async ()=>{
+  if(!modelId){ status('Load a model first.','err'); return; }
+  $('latout').innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">profiling…</span>';
+  const r=await fetch(`/api/models/${modelId}/latency?runs=8`);
+  const d=await r.json();
+  if(!r.ok){ $('latout').innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  latData=d;
+  paintLatency();
+  const fusedN=Object.keys(d.fused||{}).length;
+  $('latout').innerHTML=
+    `<div style="font-family:var(--mono);font-size:11px;color:var(--hot)">${d.wall_ms.toFixed(3)} ms / inference</div>`+
+    `<div style="font-family:var(--mono);font-size:10px;color:var(--muted)">`+
+    `${d.runs} timed runs · ${d.matched} nodes${d.overhead_us>0?` · ${d.overhead_us.toFixed(0)}µs ORT overhead (${d.overhead_ops.join(', ')})`:''}`+
+    (fusedN?`<br><span style="color:#FFB020">${fusedN} layer(s) fused by ORT — their time includes the op before them</span>`:'')+
+    `</div>`;
+  $('latrows').innerHTML=
+    '<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">where the time goes — click to inspect:</div>'+
+    d.top.map(t=>{
+      const w=Math.max(2,t.pct);
+      return `<div data-node="${t.node}" style="cursor:pointer"><span>d${t.depth} ${t.op}${t.fused_as?` <span style="color:#FFB020">(fused ${t.fused_as})</span>`:''}</span><span>${t.us.toFixed(1)}µs · ${t.pct.toFixed(1)}%</span></div>
+        <div class="bar" style="width:${w}%"></div>`;
+    }).join('');
+  $('latrows').querySelectorAll('[data-node]').forEach(el=>
+    el.onclick=()=>{ const nn=graph.nodes.find(x=>x.id===el.dataset.node); if(nn){ select(nn); fly(nn); } });
+  status(`Latency: ${d.wall_ms.toFixed(3)} ms/inference. The 3-D view now shows TIME, not activation — hottest layer is the bottleneck.`,'ok');
+});
+function paintLatency(){
+  if(!latData) return;
+  const byNode={}; latData.profile.forEach(p=>byNode[p.node]=p.us);
+  const mx=latData.max_us||1, c=new THREE.Color();
+  for(const L of layers){
+    const us=byNode[L.node.id]||0;
+    const rgb=inferno(Math.pow(us/mx,.6));
+    c.setRGB(rgb[0],rgb[1],rgb[2]);
+    for(let i=0;i<L.count;i++) L.mesh.setColorAt(i,c);
+    L.mesh.instanceColor.needsUpdate=true;
+    nodeEnergy[L.node.id]=Math.min(1,us/mx);
+  }
+  tintFans();
+  $('legend').style.display='flex';
+  $('legendbar').style.background=gradCSS(INF);
+  $('legmin').textContent='0';
+  $('legmax').textContent=mx.toFixed(1)+' µs';
+  $('legname').textContent='time per layer';
+}
+$('latoff').onclick=()=>{ latData=null; if(lastAct) paint();
+  else status('Run a stimulus to paint activations again.'); };
+
+/* ---------- network health scan ---------- */
+$('hbtn').onclick=()=>busy($('hbtn'), async ()=>{
+  if(!modelId){ status('Load a model first.','err'); return; }
+  const n=parseInt($('hn').value)||24;
+  $('hout').innerHTML='<span style="color:var(--muted);font-family:var(--mono);font-size:11px">probing…</span>';
+  $('hrows').innerHTML=''; $('hcanvas').style.display='none';
+  status(`Probing the network with ${n} varied stimuli…`);
+  const r=await fetch(`/api/models/${modelId}/health?n=${n}`);
+  const d=await r.json();
+  if(!r.ok){ $('hout').innerHTML=`<span style="color:var(--err);font-size:11px">${d.detail}</span>`; return; }
+  const t=d.totals;
+  const pct=t.dead_pct;
+  const verdict = pct<1 ? ['#7EE787','healthy — every unit fires']
+    : pct<10 ? ['#FFB020',`${pct.toFixed(1)}% of units never fire`]
+    : ['#FF7B72',`${pct.toFixed(1)}% of units never fire — significant wasted capacity`];
+  $('hout').innerHTML=
+    `<div style="font-family:var(--mono);font-size:11px;color:${verdict[0]};margin-bottom:4px">${verdict[1]}</div>`+
+    `<div style="font-family:var(--mono);font-size:10px;color:var(--muted)">`+
+    `${t.runs} probes · ${t.layers} computing layers · ${t.units} units<br>`+
+    `dead ${t.dead} · weak ${t.weak} · constant ${t.constant} · duplicate pairs ${t.dup}</div>`;
+
+  /* dead-% profile by depth */
+  const cv=$('hcanvas'); cv.style.display='block';
+  const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height);
+  const P=d.profile, m=P.length||1, bw=cv.width/m;
+  P.forEach((p,i)=>{
+    const frac=Math.min(1,p.dead_pct/100);
+    const hgt=Math.max(1, frac*(cv.height-4));
+    ctx.fillStyle = frac>0 ? '#FF7B72' : '#1E3A2A';
+    ctx.fillRect(i*bw, cv.height-hgt, Math.max(1,bw-1), hgt);
+  });
+  ctx.strokeStyle='#1A2436'; ctx.beginPath();
+  ctx.moveTo(0,cv.height-.5); ctx.lineTo(cv.width,cv.height-.5); ctx.stroke();
+
+  const bad=d.worst.filter(w=>w.dead>0||w.dup_pairs>0||w.constant>0);
+  if(!bad.length){
+    $('hrows').innerHTML='<div style="font-family:var(--mono);font-size:10px;color:var(--muted)">no dead, constant or duplicate units found.</div>';
+  } else {
+    $('hrows').innerHTML=
+      '<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">problem layers — click to inspect:</div>'+
+      bad.map(w=>{
+        const bits=[];
+        if(w.dead) bits.push(`<span style="color:#FF7B72">${w.dead} dead</span>`);
+        if(w.constant) bits.push(`<span style="color:#FFB020">${w.constant} constant</span>`);
+        if(w.dup_pairs) bits.push(`<span style="color:#7EB4FF">${w.dup_pairs} dup</span>`);
+        return `<div data-node="${w.node}" style="cursor:pointer;font-family:var(--mono);font-size:10px;padding:2px 0;border-bottom:1px solid #101828">
+          <span style="color:var(--hot)">d${w.depth} ${w.op}</span>
+          <span style="color:var(--muted)"> ${w.units}u · </span>${bits.join(' · ')}</div>`;
+      }).join('');
+    $('hrows').querySelectorAll('[data-node]').forEach(el=>
+      el.onclick=()=>{ const nn=graph.nodes.find(x=>x.id===el.dataset.node);
+                       if(nn){ select(nn); fly(nn); } });
+  }
+  status(`Health scan: ${t.dead}/${t.units} units never fire across ${t.runs} probes.`,'ok');
+});
+
+function renderInputs(inputs, primary, probe){
+  $('inrows').innerHTML=inputs.map(i=>
+    `<div class="inrow"><span class="nm">${i.name===primary?'<em>▶</em> ':''}${i.name}
+       <span style="color:var(--hot)">${MODALITY_ICON[i.modality]||i.modality}</span>
+       <span style="color:#3D4E6B">${i.dtype}</span></span>
+     <input type="text" data-in="${i.name}" value="[${i.shape.join(', ')}]"></div>`).join('');
+  probeMsg(probe);
+}
+function probeMsg(p){
+  const el=$('probemsg');
+  el.textContent = p.ok ? '✓ probe run OK — shapes are valid' : '✗ '+p.hint;
+  el.className = 'probe '+(p.ok?'ok':'bad');
+}
+$('applyshapes').onclick=()=>busy($('applyshapes'), async ()=>{
+  const shapes={};
+  document.querySelectorAll('[data-in]').forEach(el=>{
+    try{ shapes[el.dataset.in]=JSON.parse(el.value); }catch{}
+  });
+  const fd=new FormData(); fd.append('shapes', JSON.stringify(shapes));
+  const r=await fetch(`/api/models/${modelId}/shapes`,{method:'POST',body:fd});
+  const d=await r.json();
+  if(!r.ok){ status(d.detail,'err'); return; }
+  probeMsg(d.probe);
+});
+
+async function uploadModel(file){
+  status('Loading '+file.name+' …');
+  const fd=new FormData(); fd.append('file', file);
+  const r=await fetch('/api/models',{method:'POST',body:fd});
+  const d=await r.json();
+  if(!r.ok){ status(d.detail,'err'); return; }
+  if(d.status==='needs_arch'){ showRecovery(d); return; }
+  onLoaded(d);
+}
+$('loadbtn').onclick=()=>busy($('loadbtn'), async ()=>{
+  const f=$('mfile').files[0];
+  if(!f){ status('Choose a model file first — or drop one anywhere on the page.','err'); return; }
+  await uploadModel(f);
+});
+
+/* ---------- state_dict recovery ---------- */
+let pendingId=null;
+function showRecovery(d){
+  pendingId=d.pending_id;
+  $('recover').style.display='block';
+  $('recovermsg').textContent=d.message+` (${d.n_tensors} weight tensors found)`;
+  $('candbox').innerHTML = d.candidates.length
+    ? d.candidates.map(c=>`<button class="mini" data-arch="${c.arch}">
+        ${c.arch} · ${(c.score*100)|0}% match (${c.exact_shapes}/${c.matched_keys} shapes)</button>`).join('')
+    : '<div style="font-size:11px;color:var(--muted);margin-top:6px">No torchvision match found'+
+      ' (is torchvision installed on the server?). Paste the model code below.</div>';
+  document.querySelectorAll('[data-arch]').forEach(b=>
+    b.onclick=()=>resolveArch({arch:b.dataset.arch}));
+  status('Waiting for architecture…');
+}
+$('recoverbtn').onclick=()=>resolveArch({code:$('archcode').value});
+async function resolveArch(opts){
+  status('Rebuilding architecture + converting…');
+  const fd=new FormData();
+  fd.append('pending_id', pendingId);
+  if(opts.arch) fd.append('arch', opts.arch);
+  if(opts.code) fd.append('code', opts.code);
+  const sh=$('recshape').value.trim();
+  if(sh) fd.append('input_shape', sh);
+  const r=await fetch('/api/models/resolve',{method:'POST',body:fd});
+  const d=await r.json();
+  if(!r.ok){ status(d.detail,'err'); return; }
+  onLoaded(d);
+}
+
+/* ---------- build badge: answers "am I running the new files?" ---------- */
+fetch('/api/version').then(r=>r.json())
+  .then(d=>{ $('ver').textContent='v'+d.version; })
+  .catch(()=>{ $('ver').textContent=''; });
+
+/* ---------- HuggingFace gallery ---------- */
+const MOD_ICON={text:'✎',image:'▦',audio:'♪',video:'▶'};
+const dif=m=>m.diffusion?' ✦':'';
+(async ()=>{
+  let r;
+  try{ r=await fetch('/api/hf'); }catch{ $('hfgallery').textContent='gallery unavailable'; return; }
+  if(!r.ok){ $('hfgallery').innerHTML='<span style="color:var(--muted)">gallery unavailable</span>'; return; }
+  const {models, available, hint}=await r.json();
+  /* Say it up front. These buttons need an exporter that may not be
+     installed, and finding that out only by clicking — with the error
+     rendering at the far bottom of the rail — is how this looked "empty". */
+  const banner = available ? '' :
+    `<div style="border:1px solid var(--err);border-radius:4px;padding:7px 9px;
+                 margin-bottom:8px;color:#FFB4AE;line-height:1.55">
+       These need an ONNX exporter that isn't installed for this Python.<br>
+       <span style="color:var(--muted)">Run, then restart the server:</span><br>
+       <code style="color:var(--hot);user-select:all">${hint}</code>
+     </div>`;
+  $('hfgallery').innerHTML = banner + models.map(m=>
+    `<button data-hf="${m.name}" style="text-align:left"${available?'':' disabled'}>
+       ${MOD_ICON[m.modality]||'·'} ${m.title}${dif(m)}
+       ${m.trained?'':'<span style="color:#556">·untrained</span>'}
+       <small>${m.desc}</small></button>`).join('');
+  if(!available) return;
+  document.querySelectorAll('[data-hf]').forEach(b=>
+    b.onclick=()=>busy(b, async ()=>{
+      status(`Fetching + exporting ${b.dataset.hf} to ONNX…\n(first load downloads the model; cached after)`);
+      toast(`Downloading + exporting ${b.dataset.hf}… first time can take a minute.`);
+      const r=await fetch(`/api/hf/${b.dataset.hf}`,{method:'POST'});
+      const d=await r.json();
+      if(!r.ok){ status(d.detail,'err'); return; }
+      hfAttached = !!d.tokenizer_attached;
+      onLoaded(d);
+      if(d.hf){
+        if(d.hf.normalize) $('norm').value=d.hf.normalize;
+        if(d.hf.schedule) $('sched').value=d.hf.schedule;   // e.g. DDPM=linear
+        if(d.hf.default_text){
+          $('stimtext').value=d.hf.default_text;
+          $('rectext').value=d.hf.default_text;
+        }
+        const tag = d.hf.trained ? '' : '  (untrained weights — structure only)';
+        status($('status').textContent+`\n${d.tokenizer_attached?'tokenizer attached · ':''}try Run, then click an attention layer.`+tag,'ok');
+      }
+    }));
+})();
+
+/* ---------- samples ---------- */
+(async ()=>{
+  const r=await fetch('/api/samples');
+  if(!r.ok) return;
+  const {samples}=await r.json();
+  $('samples').innerHTML=samples.map(s=>
+    `<button data-s="${s.name}">${s.title}<small>${s.desc}</small></button>`).join('');
+  document.querySelectorAll('[data-s]').forEach(b=>
+    b.onclick=()=>busy(b, async ()=>{
+      const r=await fetch(`/api/samples/${b.dataset.s}`,{method:'POST'});
+      const d=await r.json();
+      if(!r.ok){ status(d.detail,'err'); return; }
+      onLoaded(d);
+      if(b.dataset.s==='demo-transformer'){
+        $('mode').value='text'; $('mode').onchange();
+        $('stimtext').value='the quick brown fox jumps over the lazy dog';
+      }
+      if(b.dataset.s==='demo-clip'){
+        const txt=document.querySelector('#multistim .card[data-input="input_ids"] .ctext');
+        if(txt) txt.value='a photo of a golden retriever';
+        const imgSel=document.querySelector('#multistim .card[data-input="pixel_values"] .cmode');
+        status($('status').textContent+
+          '\nTip: drop an image on the page (or switch pixel_values to noise) + a caption, then Run.','ok');
+      }
+    }));
+})();
+
+/* ---------- drag & drop ---------- */
+let dragDepth=0;
+addEventListener('dragenter', e=>{ e.preventDefault(); if(++dragDepth===1) $('dropglow').style.display='flex'; });
+addEventListener('dragleave', e=>{ if(--dragDepth===0) $('dropglow').style.display='none'; });
+addEventListener('dragover', e=>e.preventDefault());
+addEventListener('drop', async e=>{
+  e.preventDefault(); dragDepth=0; $('dropglow').style.display='none';
+  const f=e.dataTransfer.files[0]; if(!f) return;
+  const ext=f.name.split('.').pop().toLowerCase();
+  const routes={
+    image:['png','jpg','jpeg','webp','gif','bmp'],
+    audio:['wav','flac','ogg','mp3','m4a','aac'],
+    video:['mp4','mov','webm','avi','mkv']};
+  const modality=Object.keys(routes).find(k=>routes[k].includes(ext));
+  if(['onnx','pt','pth','h5','keras','pb'].includes(ext)) await uploadModel(f);
+  else if(modality && modelId && multiInputs){
+    const card=[...document.querySelectorAll('#multistim .card')]
+      .find(c=>c.querySelector('.cmode').value===modality);
+    if(!card){ status(`No input card is set to ${modality} mode.`,'err'); return; }
+    const dt=new DataTransfer(); dt.items.add(f);
+    card.querySelector('.cfile').files=dt.files;
+    status(`${modality} "${f.name}" → ${card.dataset.input}. Fill the other inputs, then Run.`,'ok');
+  }
+  else if(modality && modelId){
+    $('mode').value=modality; $('mode').onchange();
+    const input={image:'imgfile',audio:'audiofile',video:'videofile'}[modality];
+    const dt=new DataTransfer(); dt.items.add(f); $(input).files=dt.files;
+    status(`${modality} "${f.name}" set as stimulus — running…`);
+    $('runbtn').click();
+  } else status('Drop a model file (.onnx/.pt/.h5) — or an image/audio/video once a model is loaded.','err');
+});
+
+/* ---------- mic recording (client-side WAV, no server ffmpeg needed) ---------- */
+function encodeWAV(samples, sr){
+  const buf=new ArrayBuffer(44+samples.length*2), v=new DataView(buf);
+  const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  ws(0,'RIFF'); v.setUint32(4,36+samples.length*2,true); ws(8,'WAVEfmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true);
+  v.setUint16(34,16,true); ws(36,'data'); v.setUint32(40,samples.length*2,true);
+  for(let i=0;i<samples.length;i++){
+    const s=Math.max(-1,Math.min(1,samples[i]));
+    v.setInt16(44+i*2, s<0?s*0x8000:s*0x7FFF, true);
+  }
+  return new Blob([buf],{type:'audio/wav'});
+}
+$('micbtn').onclick=()=>busy($('micbtn'), async ()=>{
+  try{
+    const sr=parseInt($('srate').value)||16000;
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    status('Recording 4 s — speak now…');
+    const rec=new MediaRecorder(stream), chunks=[];
+    rec.ondataavailable=e=>chunks.push(e.data);
+    const done=new Promise(res=>rec.onstop=res);
+    rec.start(); await new Promise(r=>setTimeout(r,4000)); rec.stop(); await done;
+    stream.getTracks().forEach(t=>t.stop());
+    const raw=await new Blob(chunks).arrayBuffer();
+    const ac=new AudioContext();
+    const decoded=await ac.decodeAudioData(raw); ac.close();
+    const oc=new OfflineAudioContext(1, Math.ceil(decoded.duration*sr), sr);
+    const src=oc.createBufferSource(); src.buffer=decoded;
+    src.connect(oc.destination); src.start();
+    const rendered=await oc.startRendering();
+    const wav=encodeWAV(rendered.getChannelData(0), sr);
+    const dt=new DataTransfer();
+    dt.items.add(new File([wav],'mic.wav',{type:'audio/wav'}));
+    $('audiofile').files=dt.files;
+    status('Recorded 4 s from mic → running stimulus…','ok');
+    $('runbtn').click();
+  }catch(err){ status('Mic unavailable: '+err.message,'err'); }
+});
+
+/* ---------- webcam snapshot ---------- */
+$('camsnap').onclick=()=>busy($('camsnap'), async ()=>{
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:true});
+    const video=document.createElement('video');
+    video.srcObject=stream; await video.play();
+    await new Promise(r=>setTimeout(r,350));           // exposure settle
+    const cv=document.createElement('canvas');
+    cv.width=video.videoWidth; cv.height=video.videoHeight;
+    cv.getContext('2d').drawImage(video,0,0);
+    stream.getTracks().forEach(t=>t.stop());
+    const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+    const dt=new DataTransfer();
+    dt.items.add(new File([blob],'webcam.png',{type:'image/png'}));
+    $('imgfile').files=dt.files;
+    status('Webcam frame captured → running stimulus…','ok');
+    $('runbtn').click();
+  }catch(err){ status('Webcam unavailable: '+err.message,'err'); }
+});
+
+/* ---------- stimulus ---------- */
+const MODE_ROWS={image:'imgrow', text:'textrow', audio:'audiorow', video:'videorow'};
+$('mode').onchange=()=>{
+  Object.values(MODE_ROWS).forEach(id=>$(id).style.display='none');
+  const row=MODE_ROWS[$('mode').value];
+  if(row) $(row).style.display='block';
+};
+const MODALITY_ICON={text:'✎ text', image:'▦ image', audio:'♪ audio',
+                     video:'▶ video', tensor:'⊞ tensor'};
+function autoMode(inputs, primary){
+  const p=inputs.find(i=>i.name===primary);
+  if(p && MODE_ROWS[p.modality]!==undefined && p.modality!=='tensor'){
+    $('mode').value=p.modality;
+  } else if(p && p.modality==='tensor'){
+    $('mode').value='noise';
+  }
+  $('mode').onchange();
+}
+$('tokkind').onchange=()=> $('tokfile').style.display =
+  $('tokkind').value==='hf'?'block':'none';
+
+$('runbtn').onclick=()=>busy($('runbtn'), async ()=>{
+  if(!modelId){ status('Load a model first.','err'); return; }
+
+  /* ----- multimodal: one stimulus per card ----- */
+  if(multiInputs){
+    const fd=new FormData(), specs={};
+    let hasText=false, missing=null;
+    document.querySelectorAll('#multistim .card').forEach(card=>{
+      const name=card.dataset.input, m=card.querySelector('.cmode').value;
+      specs[name]={mode:m, normalize:$('norm').value,
+                   sample_rate:$('srate').value||'16000'};
+      if(m==='text'){
+        hasText=true;
+        specs[name].text=card.querySelector('.ctext').value;
+      }
+      if(MEDIA_ACCEPT[m]){
+        const f=card.querySelector('.cfile').files[0];
+        if(!f) missing=`${name} needs a ${m} file`;
+        else fd.append('media__'+name, f);
+      }
+    });
+    if(missing){ status(missing+'.','err'); return; }
+    if(hasText && !hfAttached)
+      await fetch(`/api/models/${modelId}/tokenizer`,
+                  {method:'POST', body:(()=>{const t=new FormData();
+                    t.append('kind','byte'); return t;})()});
+    fd.append('stimuli', JSON.stringify(specs));
+    status('Running multimodal stimulus…');
+    const r=await fetch(`/api/models/${modelId}/run_multi`,{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok){ status(d.detail,'err'); return; }
+    lastAct=d.activations; actScale=d.scale;
+    $('tokens').innerHTML='';
+    paint();
+    if(selected) select(selected);
+    status(`Multimodal stimulus complete — ${Object.keys(lastAct).length} layers recorded.`,'ok');
+    return;
+  }
+
+  /* ----- single-input path ----- */
+  const mode=$('mode').value;
+  if(mode==='text'){                    // attach tokenizer if needed
+    // if a tokenizer was already attached (e.g. from the HF gallery) and the
+    // user hasn't explicitly chosen to upload one, keep the server's tokenizer.
+    if(!(hfAttached && $('tokkind').value!=='hf')){
+      const fd=new FormData();
+      fd.append('kind', $('tokkind').value);
+      if($('tokkind').value==='hf'){
+        const f=$('tokfile').files[0];
+        if(!f){ status('Choose a tokenizer.json, or switch to the byte tokenizer.','err'); return; }
+        fd.append('file', f);
+      }
+      const tr=await fetch(`/api/models/${modelId}/tokenizer`,{method:'POST',body:fd});
+      if(!tr.ok){ status((await tr.json()).detail,'err'); return; }
+      hfAttached = $('tokkind').value==='hf';
+    }
+  }
+  status('Running stimulus…');
+  const fd=new FormData();
+  fd.append('mode', mode);
+  fd.append('normalize', $('norm').value);
+  fd.append('sample_rate', $('srate').value||'16000');
+  fd.append('schedule', $('sched').value);
+  const need={image:'imgfile', audio:'audiofile', video:'videofile'}[mode];
+  if(need){
+    const f=$(need).files[0];
+    if(!f){ status(`Choose a ${mode} file (or drop one on the canvas).`,'err'); return; }
+    fd.append('media', f);
+  }
+  if(mode==='text') fd.append('text', $('stimtext').value);
+  const r=await fetch(`/api/models/${modelId}/run`,{method:'POST',body:fd});
+  const d=await r.json();
+  if(!r.ok){ status(d.detail,'err'); return; }
+  lastAct=d.activations; actScale=d.scale;
+  $('tokens').innerHTML=(d.tokens||[]).slice(0,80).map(t=>
+    `<span title="id ${t.id}">${String(t.token).replace(/</g,'&lt;')}</span>`).join('');
+  paint();
+  if(selected) select(selected);
+  status(`Stimulus complete — ${Object.keys(lastAct).length} layers recorded.\nClick a layer (3D or list) to inspect.`,'ok');
+});
+
+$('basebtn').onclick=()=>{
+  if(!lastAct){ status('Run a stimulus first — that run becomes the baseline.','err'); return; }
+  baseAct=lastAct; baseScale=actScale;
+  $('contrast').disabled=false;
+  status('Baseline held. Run a second stimulus, then tick "Contrast" to see A − B.','ok');
+};
+
+$('lblbtn').onclick=()=>busy($('lblbtn'), async ()=>{
+  const f=$('lfile').files[0];
+  if(!f){ status('Choose a labels JSON file.','err'); return; }
+  const fd=new FormData(); fd.append('file', f);
+  const r=await fetch(`/api/models/${modelId}/labels`,{method:'POST',body:fd});
+  const d=await r.json();
+  status(r.ok?`Attached ${d.count} labels.`:d.detail, r.ok?'ok':'err');
+});
+
+/* ---------- loop ---------- */
+const clock=new THREE.Clock();
+(function loop(){
+  requestAnimationFrame(loop);
+  const dt=clock.getDelta();
+  controls.update();
+  sweepFrame(dt);
+  if(layoutT<1 && layers.length){                 // animated layout morph
+    layoutT=Math.min(1, layoutT+dt*1.4);
+    const k=layoutT*layoutT*(3-2*layoutT);
+    for(const L of layers){
+      L.mesh.position.lerpVectors(L.from, L.to, k);
+      L.center.copy(L.mesh.position);
+    }
+    refreshEdges();
+  }
+  flowFrame(dt);
+  if(playing && rec){                             // temporal playback ~12 fps
+    playAcc+=dt;
+    if(playAcc>1/12){
+      playAcc=0;
+      paintFrame((recFrame+1)%rec.frames);
+    }
+  }
+  if(flyTo){
+    flyTo.t=Math.min(1, flyTo.t+dt*2.2);
+    const k=flyTo.t*flyTo.t*(3-2*flyTo.t);
+    controls.target.lerp(flyTo.target, k*.2+.05);
+    camera.position.lerp(flyTo.pos, k*.15+.03);
+    /* Land exactly. The lerp only ever gets ~94% of the way before t hits 1,
+       so a preset never fully arrived — "Overview" appeared to change the
+       angle but not the zoom, because the distance was the part left behind. */
+    if(flyTo.t>=1){
+      camera.position.copy(flyTo.pos);
+      controls.target.copy(flyTo.target);
+      controls.update();
+      flyTo=null;
+    }
+  }
+  renderer.render(scene,camera);
+})();
+</script>
+</body>
+</html>

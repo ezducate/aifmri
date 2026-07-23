@@ -1,0 +1,27 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+onnx>=1.15
+onnxruntime>=1.17
+numpy>=1.26
+pillow>=10.0
+tokenizers>=0.15        # text stimuli (HF tokenizer.json support)
+soundfile>=0.12         # audio stimuli (wav/flac/ogg/mp3 decode)
+imageio>=2.34           # video stimuli
+imageio-ffmpeg>=0.4     # bundles a static ffmpeg — no system install needed
+
+# HuggingFace one-click gallery (optional — enables /api/hf):
+# transformers>=4.40
+# optimum>=1.19
+# optimum-onnx            # provides optimum.exporters.onnx.main_export
+# onnxscript              # required by the torch>=2.5 ONNX exporter
+
+# Diffusion gallery entry (DDPM):
+# diffusers>=0.27
+
+# Tests:
+# pytest>=8.0
+
+# Other optional model-format support:
+# torch>=2.2 ; torchvision>=0.17   # .pt/.pth + state_dict recovery
+# tensorflow>=2.15 ; tf2onnx>=1.16 # .h5/.keras/SavedModel
