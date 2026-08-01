@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/logo.svg" alt="AIFmri logo" width="240">
+</p>
+
 # AIFmri — functional imaging for neural networks
 
 **v0.20.0** · [github.com/ezducate/aifmri](https://github.com/ezducate/aifmri)

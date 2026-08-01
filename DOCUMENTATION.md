@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/logo.svg" alt="AIFmri logo" width="220">
+</p>
+
 # AIFmri — functional imaging for neural networks
 
 **Version 0.20.0**
