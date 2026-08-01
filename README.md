@@ -2,6 +2,9 @@
 
 **v0.20.0** · [github.com/ezducate/aifmri](https://github.com/ezducate/aifmri)
 
+> **Developed by Iqbal Addou** — [iqbal.addou@gmail.com](mailto:iqbal.addou@gmail.com) · [cto@ezducate.ai](mailto:cto@ezducate.ai)
+> for **Ezducate LLC** — [https://ezducate.ai](https://ezducate.ai) — special education AI-powered solutions.
+
 AIFmri loads a compiled neural network — an `.onnx`, a PyTorch `.pt`, a
 TensorFlow `.h5` — and renders it in 3D. Feed it a stimulus (an image, a
 sentence, a sound, a video, or just noise) and every layer lights up with the
@@ -45,6 +48,7 @@ bottom are the layer strip and activation-by-depth.*
 - [How it was built](#how-it-was-built)
 - [API](#api)
 - [Known limits](#known-limits)
+- [About / Credits](#about--credits)
 
 ---
 
@@ -686,3 +690,16 @@ Deliberate, not bugs:
 * **The demo samples have random untrained weights.** Their structure is real;
   their predictions are meaningless. Use the gallery models for anything where
   the output should mean something.
+
+---
+
+## About / Credits
+
+AIFmri was developed by **Iqbal Addou**
+([iqbal.addou@gmail.com](mailto:iqbal.addou@gmail.com) ·
+[cto@ezducate.ai](mailto:cto@ezducate.ai)) for **Ezducate LLC**
+([https://ezducate.ai](https://ezducate.ai)), a special education AI-powered
+solution.
+
+Copyright © 2026 Ezducate LLC. Licensed under the Apache License 2.0 — see
+[LICENSE](LICENSE).

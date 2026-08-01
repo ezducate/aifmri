@@ -238,3 +238,8 @@ For anything that failed or looked wrong, give me:
 At the end, tell me the **three worst problems** in priority order, and — since
 you can see the screen and I cannot — your honest opinion of whether this thing
 is actually pleasant to use.
+
+---
+
+*AIFmri was developed by Iqbal Addou (iqbal.addou@gmail.com · cto@ezducate.ai)
+for Ezducate LLC — https://ezducate.ai — special education AI-powered solutions.*

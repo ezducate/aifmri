@@ -2,6 +2,9 @@
 
 **Version 0.20.0**
 
+> **Developed by Iqbal Addou** — [iqbal.addou@gmail.com](mailto:iqbal.addou@gmail.com) · [cto@ezducate.ai](mailto:cto@ezducate.ai)
+> for **Ezducate LLC** — [https://ezducate.ai](https://ezducate.ai) — special education AI-powered solutions.
+
 AIFmri loads a compiled neural network — an `.onnx` file, a PyTorch `.pt`, a
 TensorFlow `.h5` — and renders it in 3D. Feed it a stimulus (an image, a
 sentence, a sound, a video, or just noise) and every layer lights up with the
@@ -406,3 +409,8 @@ These are deliberate, not bugs:
 
 *Generated for AIFmri v0.20.0. All UI screenshots are of the current build;
 the version badge visible in several of them reads v0.20.0.*
+
+*AIFmri was developed by **Iqbal Addou** ([iqbal.addou@gmail.com](mailto:iqbal.addou@gmail.com) ·
+[cto@ezducate.ai](mailto:cto@ezducate.ai)) for **Ezducate LLC** —
+[https://ezducate.ai](https://ezducate.ai) — special education AI-powered
+solutions. © 2026 Ezducate LLC.*
